@@ -1,0 +1,41 @@
+Agento: Secure Access | Enterprise AI System | Next.js, TypeScript, GenAI, Azure Cosmos DB
+GitHub: https://github.com/mukul-sharma-tech/The-Agento | Live: https://the-agento.vercel.app/
+◦ Solved the problem of manual PDF reading and query scripting by building Agento, a subscription-based access
+flow enabling chat, voice, and visual interaction with enterprise data, along with natural-language querying and
+analytics.
+◦ Designed a black-box, on-premise AI system where company data remains isolated within its own database and
+models, ensuring privacy and security.
+
+Orbital Creeper Shield: An Autonomous, Explainable AI Defense Framework Against Self-Replicating Prompt Injection Worms in Satellite Swarms - Python, SHAP, LLM, Scikit-learn
+GitHub: https://github.com/mukul-sharma-tech/Orbital-Creeper-Shield | Live: https://orbital-creeper-shield.streamlit.app/
+◦It is an autonomous security framework built specifically to protect ISRO's satellite swarms from self-replicating prompt injection worms, which are malicious commands designed to exploit trusted connections between satellites.
+◦It acts as an onboard "digital immune system" that instantly detects and quarantines threats in real-time without needing to wait for ground control intervention.
+◦Instead of silently blocking suspicious commands, it uses Explainable AI (SHAP) to tell human operators exactly why a command was stopped by highlighting risky words like "override" or "ignore". This ensures that mission commanders can fully trust the AI's autonomous decisions
+
+Knox Neural Shield: AI Intrusion Detection System- Python, SHAP, LLM, Scikit-learn
+GitHub: https://github.com/mukul-sharma-tech/Knox-Neural-Shield | Live: https://knox-neural-shield.streamlit.app/
+◦ Developed a real-time AI intrusion detection system using an RF–Autoencoder ensemble on the UNSW-NB15
+dataset for detecting DoS, zero-day attacks, and anomalies.
+◦ Implemented SHAP-based explainability to highlight key malicious traffic features and improve alert transparency.
+◦ Built an LLM-powered automated response system to generate readable security alerts and trigger network isolation
+or cutoff upon threats.
+
+AgenticIQ: Code Execution Pipeline | Next.js, Typescript, Inngest, esbuild, AI Pipeline, MongoDB
+GitHub: https://github.com/mukul-sharma-tech/AgenticIQ | Live: https://agentic-iq.vercel.app/
+◦ Engineered a fault-tolerant AI pipeline using esbuild sandboxing to detect hallucinated imports before runtime.
+◦ Reduced execution crashes by 95% via auto-correction logic, silent retries using inngest, and intelligent model
+fallback.
+
+Synapsee: AI Market Validator | Next.js, MongoDB, Typescript, Jina, Google Trends, AI/ML
+GitHub: https://github.com/mukul-sharma-tech/SynapseeAI | Live: https://the-synapsee-ai.vercel.app/
+◦ Architected a comprehensive analytics dashboard visualizing real-time metrics (GoogleTrends, Competitor Pricing)
+and Safe Batch Size calculations using interactive charts.
+◦ Engineered a modular report interface that aggregates multi-source insights (User Pain Points, Raw Material
+Feasibility) into actionable UI cards for instant startup validation.
+
+RFP-Optimize AI: Automates RFP Analysis | Python, FastAPI, LangGraph
+GitHub: https://github.com/mukul-sharma-tech/RFP-Optimize-AI | Live: https://rfp-optimize-ai.streamlit.app/
+◦ It features a centralized LangGraph AgentOrchestrator that loops through multi-agent state charts to automate and
+synchronize complex Request for Proposal (RFP) evaluation workflows.
+◦ The graph architecture routes data between a specialized TechnicalAgent for compliance checks and a PricingAgent for
+margin calculation, establishing a resilient, stateful pipeline for advanced bid analysis.

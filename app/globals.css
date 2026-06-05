@@ -1,26 +1,42 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-background: #050508;
+  --color-foreground: #ffffff;
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
 body {
-  background: var(--background);
-  color: var(--foreground);
+  background: #050508;
+  color: #ffffff;
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* ── Neon wave animations ── */
+@keyframes wave1 {
+  0%   { d: path("M-100,200 C200,100 400,300 700,200 C1000,100 1200,300 1540,200"); }
+  50%  { d: path("M-100,230 C200,130 400,260 700,230 C1000,160 1200,270 1540,220"); }
+  100% { d: path("M-100,200 C200,100 400,300 700,200 C1000,100 1200,300 1540,200"); }
+}
+@keyframes wave2 {
+  0%   { d: path("M-100,350 C200,450 500,250 800,380 C1100,480 1300,280 1540,370"); }
+  50%  { d: path("M-100,370 C200,420 500,290 800,350 C1100,450 1300,310 1540,390"); }
+  100% { d: path("M-100,350 C200,450 500,250 800,380 C1100,480 1300,280 1540,370"); }
+}
+@keyframes wave3 {
+  0%   { d: path("M-100,500 C300,400 600,600 900,480 C1150,380 1350,520 1540,460"); }
+  50%  { d: path("M-100,520 C300,430 600,570 900,510 C1150,410 1350,490 1540,480"); }
+  100% { d: path("M-100,500 C300,400 600,600 900,480 C1150,380 1350,520 1540,460"); }
+}
+
+@keyframes pulse-slow  { 0%,100%{opacity:.2} 50%{opacity:.35} }
+@keyframes pulse-slow2 { 0%,100%{opacity:.15} 50%{opacity:.28} }
+@keyframes pulse-slow3 { 0%,100%{opacity:.1}  50%{opacity:.2}  }
+
+.animate-wave1  { animation: wave1  8s  ease-in-out infinite; }
+.animate-wave2  { animation: wave2  11s ease-in-out infinite; }
+.animate-wave3  { animation: wave3  14s ease-in-out infinite; }
+.animate-pulse-slow  { animation: pulse-slow  6s ease-in-out infinite; }
+.animate-pulse-slow2 { animation: pulse-slow2 8s ease-in-out infinite; }
+.animate-pulse-slow3 { animation: pulse-slow3 10s ease-in-out infinite; }

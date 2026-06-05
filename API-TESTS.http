@@ -1,0 +1,55 @@
+### Test Document Upload API (POST)
+POST http://localhost:3000/api/documents
+Content-Type: application/json
+
+{
+  "content": "Mukul is a software engineer with 3 years of experience building scalable web applications. He specializes in React, Node.js, and TypeScript. He has worked on projects involving real-time data processing, API design, and cloud infrastructure. His expertise includes building microservices architectures and implementing CI/CD pipelines. He is passionate about clean code and test-driven development.",
+  "metadata": {
+    "type": "resume",
+    "source": "resume-section"
+  }
+}
+
+### Test Document Ingest API (POST)
+POST http://localhost:3000/api/documents/ingest
+Content-Type: application/json
+
+{
+  "content": "# Project: E-Commerce Platform\n\n## Tech Stack\n- Frontend: React, Next.js, TypeScript, Tailwind CSS\n- Backend: Node.js, Express, PostgreSQL\n- Infrastructure: AWS, Docker, Kubernetes\n\n## Description\nA full-stack e-commerce platform handling 10,000+ daily transactions with real-time inventory management and payment processing.\n\n## Key Features\n- Real-time inventory tracking\n- Payment gateway integration\n- Order management system\n- Analytics dashboard\n\n## Design Tradeoffs\n- Chose PostgreSQL over MongoDB for ACID compliance in financial transactions\n- Implemented eventual consistency for inventory updates to handle high traffic\n- Used Redis for caching frequently accessed product data",
+  "type": "github",
+  "source": "github-repo-ecommerce",
+  "metadata": {
+    "repoUrl": "https://github.com/mukul/ecommerce-platform",
+    "stars": 45,
+    "language": "TypeScript"
+  }
+}
+
+### Test Chat API (POST)
+POST http://localhost:3000/api/chat
+Content-Type: application/json
+
+{
+  "message": "What is Mukul's experience?"
+}
+
+### Test Chat API with follow-up (POST)
+POST http://localhost:3000/api/chat
+Content-Type: application/json
+
+{
+  "message": "Tell me about the e-commerce project",
+  "conversationHistory": [
+    {"role": "user", "content": "What is Mukul's experience?"},
+    {"role": "assistant", "content": "Mukul has 3 years of experience building scalable web applications with React, Node.js, and TypeScript."}
+  ]
+}
+
+### Get All Documents (GET)
+GET http://localhost:3000/api/documents
+
+### Get Document Statistics (GET)
+GET http://localhost:3000/api/documents/ingest
+
+### Delete All Documents (DELETE)
+DELETE http://localhost:3000/api/documents

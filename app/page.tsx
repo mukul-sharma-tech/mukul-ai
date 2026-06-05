@@ -1,65 +1,330 @@
-import Image from "next/image";
+'use client';
+
+import { useState, useRef, useEffect, FormEvent } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+
+interface Message {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+interface ChatResponse {
+  success: boolean;
+  response: string;
+}
+
+function sanitizeLLMOutput(text: string): string {
+  return text.replace(/<br\s*\/?>/gi, '\n');
+}
+
+const SUGGESTIONS = [
+  'Why are you fit for this role?',
+  'Tell me about your internships',
+  'What AI projects have you built?',
+  'LangGraph experience?',
+];
+
+/* ── Animated neon wave background ── */
+function NeonBackground() {
+  return (
+    <div className="fixed inset-0 -z-10 overflow-hidden bg-[#050508]">
+      {/* Deep radial glows */}
+      <div className="absolute -top-40 -left-40 w-[600px] h-[600px] rounded-full bg-violet-700/20 blur-[120px] animate-pulse-slow" />
+      <div className="absolute -bottom-40 -right-40 w-[600px] h-[600px] rounded-full bg-cyan-600/15 blur-[120px] animate-pulse-slow2" />
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[400px] h-[400px] rounded-full bg-fuchsia-700/10 blur-[100px] animate-pulse-slow3" />
+
+      {/* SVG wavy neon lines */}
+      <svg className="absolute inset-0 w-full h-full opacity-30" viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice">
+        <defs>
+          <filter id="glow">
+            <feGaussianBlur stdDeviation="4" result="blur" />
+            <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
+          </filter>
+        </defs>
+        {/* Wave 1 – violet */}
+        <path
+          d="M-100,200 C200,100 400,300 700,200 C1000,100 1200,300 1540,200"
+          fill="none" stroke="#8b5cf6" strokeWidth="1.5" filter="url(#glow)"
+          className="animate-wave1"
+        />
+        {/* Wave 2 – cyan */}
+        <path
+          d="M-100,350 C200,450 500,250 800,380 C1100,480 1300,280 1540,370"
+          fill="none" stroke="#06b6d4" strokeWidth="1.5" filter="url(#glow)"
+          className="animate-wave2"
+        />
+        {/* Wave 3 – fuchsia */}
+        <path
+          d="M-100,500 C300,400 600,600 900,480 C1150,380 1350,520 1540,460"
+          fill="none" stroke="#d946ef" strokeWidth="1" filter="url(#glow)"
+          className="animate-wave3"
+        />
+        {/* Wave 4 – blue */}
+        <path
+          d="M-100,650 C250,550 550,720 850,620 C1100,540 1300,680 1540,610"
+          fill="none" stroke="#3b82f6" strokeWidth="1" filter="url(#glow)"
+          className="animate-wave1"
+        />
+        {/* Subtle grid lines */}
+        {[...Array(8)].map((_, i) => (
+          <line key={i} x1={i * 200} y1="0" x2={i * 200} y2="900"
+            stroke="#ffffff" strokeWidth="0.3" opacity="0.04" />
+        ))}
+        {[...Array(6)].map((_, i) => (
+          <line key={i} x1="0" y1={i * 150} x2="1440" y2={i * 150}
+            stroke="#ffffff" strokeWidth="0.3" opacity="0.04" />
+        ))}
+      </svg>
+    </div>
+  );
+}
 
 export default function Home() {
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [input, setInput] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  const handleSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!input.trim() || isLoading) return;
+
+    const userMessage = input.trim();
+    setInput('');
+    inputRef.current?.focus();
+    setMessages(prev => [...prev, { role: 'user', content: userMessage }]);
+    setIsLoading(true);
+
+    try {
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: userMessage,
+          conversationHistory: messages.slice(-5).map(m => ({ role: m.role, content: m.content })),
+        }),
+      });
+      const data: ChatResponse = await response.json();
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        content: data.success ? data.response : 'Something went wrong. Please try again.',
+      }]);
+    } catch {
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        content: 'Could not reach the server. Make sure Ollama is running.',
+      }]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <div className="flex flex-col h-screen text-white">
+      <NeonBackground />
+
+      {/* ── Header ── */}
+      <header className="shrink-0 z-20 border-b border-white/5 bg-black/30 backdrop-blur-xl">
+        <div className="max-w-3xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            {/* Neon avatar */}
+            <div className="relative w-8 h-8">
+              <div className="absolute inset-0 rounded-full bg-violet-500 blur-[6px] opacity-70 animate-pulse" />
+              <div className="relative w-8 h-8 rounded-full bg-gradient-to-br from-violet-500 via-fuchsia-500 to-cyan-500 flex items-center justify-center text-white text-xs font-bold">
+                M
+              </div>
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-white leading-none">Mukul Sharma</p>
+              <p className="text-[11px] text-white/40 leading-none mt-0.5">AI Engineer · Portfolio Assistant</p>
+            </div>
+          </div>
+          <a href="https://mukul-sharma-dev.vercel.app/" target="_blank" rel="noopener noreferrer"
+            className="text-xs font-medium text-cyan-400 hover:text-cyan-300 transition-colors">
+            Portfolio ↗
+          </a>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+      </header>
+
+      {/* ── Messages ── */}
+      <main className="flex-1 overflow-y-auto">
+        <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8 space-y-5">
+
+          {/* Empty state */}
+          {messages.length === 0 && (
+            <div className="flex flex-col items-center justify-center min-h-[55vh] text-center select-none">
+              {/* Neon logo */}
+              <div className="relative w-16 h-16 mb-6">
+                <div className="absolute inset-0 rounded-2xl bg-violet-500 blur-[16px] opacity-60 animate-pulse" />
+                <div className="relative w-16 h-16 rounded-2xl bg-gradient-to-br from-violet-600 via-fuchsia-500 to-cyan-500 flex items-center justify-center text-white text-2xl font-bold shadow-lg">
+                  M
+                </div>
+              </div>
+              <h1 className="text-2xl sm:text-3xl font-semibold text-white mb-2 tracking-tight">
+                Hi, I&apos;m Mukul&apos;s AI
+              </h1>
+              <p className="text-sm text-white/40 max-w-xs mb-8">
+                Ask about experience, projects, or fit for the Scaler AI Engineer role.
+              </p>
+              <div className="flex flex-wrap gap-2 justify-center">
+                {SUGGESTIONS.map(s => (
+                  <button key={s} onClick={() => { setInput(s); inputRef.current?.focus(); }}
+                    className="px-3.5 py-2 rounded-full border border-white/10 bg-white/5 text-white/60 text-xs font-medium hover:border-violet-400/60 hover:text-violet-300 hover:bg-violet-500/10 transition-all">
+                    {s}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Message list */}
+          {messages.map((msg, i) => (
+            <div key={i} className={`flex gap-3 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+
+              {/* Assistant neon avatar */}
+              {msg.role === 'assistant' && (
+                <div className="relative shrink-0 w-7 h-7 mt-0.5">
+                  <div className="absolute inset-0 rounded-full bg-violet-500 blur-[5px] opacity-50" />
+                  <div className="relative w-7 h-7 rounded-full bg-gradient-to-br from-violet-500 to-cyan-500 flex items-center justify-center text-white text-[10px] font-bold">
+                    M
+                  </div>
+                </div>
+              )}
+
+              <div className={`
+                rounded-2xl px-4 py-3 text-sm leading-relaxed
+                ${msg.role === 'user'
+                  ? 'max-w-[70%] bg-gradient-to-br from-violet-600 to-fuchsia-600 text-white rounded-tr-sm shadow-lg shadow-violet-500/20'
+                  : 'w-full sm:max-w-[85%] bg-black/40 border border-white/8 backdrop-blur-sm rounded-tl-sm'
+                }
+              `}>
+                {msg.role === 'user' ? (
+                  <p className="whitespace-pre-wrap">{msg.content}</p>
+                ) : (
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    components={{
+                      h1: ({ children }) => <h1 className="text-base font-semibold text-white mt-3 mb-1.5">{children}</h1>,
+                      h2: ({ children }) => <h2 className="text-sm font-semibold text-white mt-3 mb-1 pb-1 border-b border-white/10">{children}</h2>,
+                      h3: ({ children }) => <h3 className="text-sm font-medium text-cyan-400 mt-2 mb-0.5">{children}</h3>,
+                      p: ({ children }) => <p className="text-white/80 mb-2 leading-relaxed text-sm">{children}</p>,
+                      strong: ({ children }) => <strong className="font-semibold text-white">{children}</strong>,
+                      em: ({ children }) => <em className="text-white/50">{children}</em>,
+                      ul: ({ children }) => <ul className="list-none ml-0 my-1.5 space-y-1">{children}</ul>,
+                      ol: ({ children }) => <ol className="list-decimal ml-4 my-1.5 space-y-1 text-white/80 text-sm">{children}</ol>,
+                      li: ({ children }) => (
+                        <li className="flex gap-2 text-white/80 text-sm">
+                          <span className="text-cyan-400 mt-1.5 shrink-0 text-xs">▸</span>
+                          <span>{children}</span>
+                        </li>
+                      ),
+                      code: ({ children, className }) => {
+                        const isBlock = className?.includes('language-');
+                        return isBlock
+                          ? <code className="block bg-black/60 border border-white/10 rounded-lg p-3 text-cyan-300 text-xs overflow-x-auto my-2 font-mono">{children}</code>
+                          : <code className="bg-white/10 px-1.5 py-0.5 rounded text-cyan-300 text-xs font-mono">{children}</code>;
+                      },
+                      blockquote: ({ children }) => (
+                        <blockquote className="border-l-2 border-violet-400 pl-3 my-2 text-white/40 italic text-sm">{children}</blockquote>
+                      ),
+                      hr: () => <hr className="border-white/10 my-3" />,
+                      table: ({ children }) => (
+                        <div className="overflow-x-auto my-3 rounded-lg border border-white/10">
+                          <table className="w-full border-collapse text-xs">{children}</table>
+                        </div>
+                      ),
+                      thead: ({ children }) => <thead className="bg-white/5">{children}</thead>,
+                      tbody: ({ children }) => <tbody>{children}</tbody>,
+                      tr: ({ children }) => <tr className="border-b border-white/10">{children}</tr>,
+                      th: ({ children }) => <th className="px-3 py-2 text-left text-white font-medium text-xs whitespace-nowrap">{children}</th>,
+                      td: ({ children }) => <td className="px-3 py-2 text-white/70 text-xs align-top">{children}</td>,
+                    }}
+                  >
+                    {sanitizeLLMOutput(msg.content)}
+                  </ReactMarkdown>
+                )}
+              </div>
+
+              {/* User avatar */}
+              {msg.role === 'user' && (
+                <div className="shrink-0 w-7 h-7 rounded-full bg-white/10 border border-white/10 flex items-center justify-center text-white/60 text-[10px] font-bold mt-0.5">
+                  U
+                </div>
+              )}
+            </div>
+          ))}
+
+          {/* Typing dots */}
+          {isLoading && (
+            <div className="flex gap-3 justify-start">
+              <div className="relative shrink-0 w-7 h-7 mt-0.5">
+                <div className="absolute inset-0 rounded-full bg-violet-500 blur-[5px] opacity-50" />
+                <div className="relative w-7 h-7 rounded-full bg-gradient-to-br from-violet-500 to-cyan-500 flex items-center justify-center text-white text-[10px] font-bold">
+                  M
+                </div>
+              </div>
+              <div className="bg-black/40 border border-white/8 backdrop-blur-sm rounded-2xl rounded-tl-sm px-4 py-3.5">
+                <div className="flex items-center gap-1.5">
+                  {[0, 160, 320].map(d => (
+                    <span key={d} className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-bounce"
+                      style={{ animationDelay: `${d}ms` }} />
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div ref={messagesEndRef} />
         </div>
       </main>
+
+      {/* ── Input ── */}
+      <div className="shrink-0 z-20 border-t border-white/5 bg-black/30 backdrop-blur-xl">
+        <div className="max-w-3xl mx-auto px-4 sm:px-6 py-4">
+          <form onSubmit={handleSubmit}>
+            <div className="relative flex items-center gap-2 bg-white/5 border border-white/10 rounded-2xl px-4 py-2.5
+              focus-within:border-violet-500/60 focus-within:bg-white/8 focus-within:shadow-[0_0_20px_rgba(139,92,246,0.15)]
+              transition-all duration-300">
+              <input
+                ref={inputRef}
+                type="text"
+                value={input}
+                onChange={e => setInput(e.target.value)}
+                placeholder="Ask anything"
+                disabled={isLoading}
+                className="flex-1 bg-transparent text-sm text-white placeholder-white/25 outline-none disabled:opacity-40 sm:hidden"
+              />
+              <input
+                type="text"
+                value={input}
+                onChange={e => setInput(e.target.value)}
+                placeholder="Ask about Mukul's experience, projects, skills…"
+                disabled={isLoading}
+                className="flex-1 bg-transparent text-sm text-white placeholder-white/25 outline-none disabled:opacity-40 hidden sm:block"
+              />
+              <button type="submit" disabled={isLoading || !input.trim()} aria-label="Send"
+                className="shrink-0 w-8 h-8 rounded-xl bg-gradient-to-br from-violet-600 to-fuchsia-600
+                  hover:from-violet-500 hover:to-fuchsia-500
+                  disabled:from-white/10 disabled:to-white/10 disabled:cursor-not-allowed
+                  flex items-center justify-center transition-all duration-200
+                  shadow-[0_0_12px_rgba(139,92,246,0.4)] disabled:shadow-none">
+                <svg className="w-3.5 h-3.5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
+                </svg>
+              </button>
+            </div>
+          </form>
+          <p className="text-center text-[11px] text-white/20 mt-2">
+            Grounded on Mukul&apos;s actual resume and GitHub repos
+          </p>
+        </div>
+      </div>
     </div>
   );
 }

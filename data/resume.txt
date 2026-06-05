@@ -1,0 +1,88 @@
+muku0784@gmail.com
+
+Mukul Sharma
+
++91 8882360895 
+
+Github: github.com/mukul-sharma-tech 
+ 
+LinkedIn: linkedin.com/in/mukul-sharma1010
+ 
+Portfolio - https://mukul-sharma-dev.vercel.app/
+
+Summary
+Computer Science undergraduate (9.26+ CGPA) with experience building scalable distributed systems for the national Aadhaar
+portal at UIDAI. Skilled in Distributed Architecture, Full-Stack Development, Generative AI, and AI Agents, delivering secure,
+high-performance solutions.
+
+Education
+• B.Tech in Computer Science & Technology, Expected May 2027, CGPA: 9.26/10
+Maharaja Agrasen Institute of Technology, Delhi
+• Class 12th | Joseph & Mary Public School, Delhi | 92.6% | 7th Rank, 2021–2022
+
+Experience/Internship Experience
+1) Software Development Engineer Intern | Unique Identification Authority of India | Delhi July 2025– September 2025
+◦ Engineered 20+ secure, schema-validated services using Zod, enforcing strict data controls and government gover
+nance standards across distributed identity microservices.
+◦ Scaled identity microservices via Prisma to handle 10M+ requests/month, cutting P95 latency by 40% via Redis.
+◦ Prototypedaquery-resolution systemusingPython, LLMsandSpeech-to-TextusingVapitoautomatehelplinequeries.
+
+2) Full Stack Developer Intern | Desire4Travels | Remote (India)
+May 2025– June 2025
+◦ Slashed dashboard load time by 80% by optimizing Firebase SQL queries and architecting cron-based data pipelines
+and co-architected the full-stack MVP.
+◦ Secured 90% uptime by implementing comprehensive Jest testing suites to prevent production regressions.
+◦ Built a Python search pipeline enabling natural language querying and context-aware itinerary generation.
+
+Technical Skills
+◦ Languages: C++, Python, C, JavaScript, TypeScript, SQL
+◦ Development: Next.js, Node.js, Express.js, React.js, MongoDB, PostgreSQL, CosmosDB, REST APIs, TailwindCSS
+◦ AI, ML:Generative AI, LLMs, LangChain, LangGraph, RAG Pipelines, AI Agents, Semantic Search, Vector Embeddings
+◦ Tools & Testing: Azure, Git, GitHub, VSCode, Jest, Docker, CI/CD, Postman, Redis, System Design
+◦ Concepts: Data Structures, Algorithms, Computer Networks, Operating System, DBMS, OOPS, Compiler Design
+
+Projects
+
+Chakra: Fractal Tiered Storage Engine | C++, Data Structures
+◦ Engineered Chakra, a fractal storage engine optimized for High-Frequency Trading (HFT) and high-throughput pay
+mentledgers, achieving O(1) amortized writes for heavy insertion workloads and O(K log N) for Read/Update/Delete.
+◦ Designed tiered orbit storage with bidirectional metadata pruning & cache-local layout; sustained 9.4M inserts/sec,
+outperforming both LSM-Trees & Red-Black Trees across all CRUD operations while eliminating compaction jitter.
+
+Agento: Secure Access | Enterprise AI System | Next.js, TypeScript, GenAI, Azure Cosmos DB
+◦ Solved the problem of manual PDF reading and query scripting by building Agento, a subscription-based access flow
+enabling chat, voice, and visual interaction with enterprise data, along with natural-language querying and analytics.
+◦ Engineered a secure, multi-tenant autonomous system using LangChain/LangGraph to orchestrate stateful, multi-step
+reasoning pipelines while maintaining a black-box on-premise architecture for total data isolation.
+
+RFP-Optimize AI: Automates RFP Analysis | Python, FastAPI, LangGraph
+◦ It features a centralized LangGraph AgentOrchestrator that loops through multi-agent state charts to automate and
+synchronize complex Request for Proposal (RFP) evaluation workflows.
+◦ The graph architecture routes data between a specialized TechnicalAgent for compliance checks and a PricingAgent for
+margin calculation, establishing a resilient, stateful pipeline for advanced bid analysis.
+
+Synapsee: AI Market Validator | Next.js, MongoDB, Typescript, Jina, Google Trends, AI/ML
+◦ Architected an agentic analytics engine using LangGraph to autonomously cross-reference Google Trends with com
+petitor pricing, dynamically calculating Safe Batch Sizes through iterative feedback loops. Engineered a multi-agent
+reasoning system that synthesizes unstructured data (User Pain Points, Material Feasibility) into structured, validated
+insights for automated startup feasibility reporting.
+
+AgenticIQ: Code Execution Pipeline
+- Engineered fault‑tolerant AI pipelines with esbuild sandboxing and Inngest retries to catch hallucinated imports, auto‑correct LLM outputs, and reduce execution crashes by 95%.
+
+Orbital Creeper Shield: Prompt Injection Protector | Python, SHAP, LLM, Scikit-learn
+- Developed an immune system to protect ISRO’s satellite swarms from self-replicating prompt injection worms.
+- Instantly detects and isolates malicious commands autonomously, eliminating ground control latency.
+- Integrated SHAP to provide transparent, text-highlighted justifications for blocked commands to ensure trust.
+
+
+Achievements
+◦ Competitive Programming: Solved 720+ problems on LeetCode & CodeForces, 3-star on CodeChef
+◦ Competitions: McKinsey Forward’25, TCS CodeVita Global Rank 1629, Winner (Webvision 2025, Innovative Project
+Competition), Semi Finalist (ET GenAI Hackathon 2026, Google GenAI Exchange Hackathon 2025, CodeClash 2025), SIH
+2025 Round 2, Finalist (Top 8 in CodeSynthesis 2025, Memory Over Models Hackathon, DevExpo NSUT 25, Hack Energy
+2.0, Hackground India 25, Hack@BVP 7.0
+◦ Leadership: Mentored junior developers in blockchain fundamentals as a Web3 Mentor at Google Developer Group
+◦ Contribution: AiiDA for GSOC Proposal, Intel Unnati Training 2025, SSOC 2025 & GSSOC 2025 Contributor.
+◦ Certifications: Samsung Innovation Campus AI Certification, Cybersecurity Essentials (CISCO), Generative AI (Microsoft
++ LinkedIn), Python for Data Science (IBM)
