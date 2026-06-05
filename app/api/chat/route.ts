@@ -3,7 +3,61 @@ import { getChunksCollection } from '@/lib/mongodb';
 import { generateEmbedding } from '@/lib/embeddings';
 import ollama from 'ollama';
 
-const LLM_MODEL = 'gpt-oss:120b-cloud';
+const LLM_MODEL = 'llama3';
+
+// ── Groq fallback ──────────────────────────────────────────
+async function callGroq(apiKey: string, messages: { role: string; content: string }[]): Promise<string> {
+  const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: 'llama-3.3-70b-versatile',
+      messages,
+      temperature: 0.3,
+      max_tokens: 1024,
+    }),
+  });
+  if (!res.ok) throw new Error(`Groq error ${res.status}: ${await res.text()}`);
+  const data = await res.json();
+  return data.choices?.[0]?.message?.content || '';
+}
+
+// Try Ollama → Groq API 1 → Groq API 2
+async function generateResponse(messages: { role: string; content: string }[]): Promise<string> {
+  // 1. Ollama (local)
+  try {
+    const response = await ollama.chat({ model: LLM_MODEL, messages, stream: false });
+    const content = response.message.content;
+    if (content?.trim()) return content;
+    throw new Error('Empty response');
+  } catch (err) {
+    console.warn('Ollama failed:', err instanceof Error ? err.message : err);
+  }
+
+  // 2. Groq API 1
+  const key1 = process.env.Groq_API_1;
+  if (key1) {
+    try {
+      const content = await callGroq(key1, messages);
+      if (content?.trim()) return content;
+    } catch (err) {
+      console.warn('Groq API 1 failed:', err instanceof Error ? err.message : err);
+    }
+  }
+
+  // 3. Groq API 2
+  const key2 = process.env.Groq_API_2;
+  if (key2) {
+    const content = await callGroq(key2, messages);
+    if (content?.trim()) return content;
+  }
+
+  throw new Error('All LLM providers failed');
+}
+// ──────────────────────────────────────────────────────────
 
 const JOB_DESCRIPTION = `
 ## Role: AI Engineer Intern at Scaler
@@ -194,15 +248,11 @@ export async function POST(request: NextRequest) {
       },
     ];
     
-    const response = await ollama.chat({
-      model: LLM_MODEL,
-      messages,
-      stream: false,
-    });
-    
+    const responseText = await generateResponse(messages);
+
     return NextResponse.json({
       success: true,
-      response: response.message.content,
+      response: responseText,
     });
   } catch (error) {
     console.error('Error in chat:', error);
