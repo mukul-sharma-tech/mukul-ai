@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, FormEvent } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import NeonBackground from './components/NeonBackground';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -24,61 +25,6 @@ const SUGGESTIONS = [
   'What AI projects have you built?',
   'LangGraph experience?',
 ];
-
-/* ── Animated neon wave background ── */
-function NeonBackground() {
-  return (
-    <div className="fixed inset-0 -z-10 overflow-hidden bg-[#050508]">
-      {/* Deep radial glows */}
-      <div className="absolute -top-40 -left-40 w-[600px] h-[600px] rounded-full bg-violet-700/20 blur-[120px] animate-pulse-slow" />
-      <div className="absolute -bottom-40 -right-40 w-[600px] h-[600px] rounded-full bg-cyan-600/15 blur-[120px] animate-pulse-slow2" />
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[400px] h-[400px] rounded-full bg-fuchsia-700/10 blur-[100px] animate-pulse-slow3" />
-
-      {/* SVG wavy neon lines */}
-      <svg className="absolute inset-0 w-full h-full opacity-30" viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice">
-        <defs>
-          <filter id="glow">
-            <feGaussianBlur stdDeviation="4" result="blur" />
-            <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
-          </filter>
-        </defs>
-        {/* Wave 1 – violet */}
-        <path
-          d="M-100,200 C200,100 400,300 700,200 C1000,100 1200,300 1540,200"
-          fill="none" stroke="#8b5cf6" strokeWidth="1.5" filter="url(#glow)"
-          className="animate-wave1"
-        />
-        {/* Wave 2 – cyan */}
-        <path
-          d="M-100,350 C200,450 500,250 800,380 C1100,480 1300,280 1540,370"
-          fill="none" stroke="#06b6d4" strokeWidth="1.5" filter="url(#glow)"
-          className="animate-wave2"
-        />
-        {/* Wave 3 – fuchsia */}
-        <path
-          d="M-100,500 C300,400 600,600 900,480 C1150,380 1350,520 1540,460"
-          fill="none" stroke="#d946ef" strokeWidth="1" filter="url(#glow)"
-          className="animate-wave3"
-        />
-        {/* Wave 4 – blue */}
-        <path
-          d="M-100,650 C250,550 550,720 850,620 C1100,540 1300,680 1540,610"
-          fill="none" stroke="#3b82f6" strokeWidth="1" filter="url(#glow)"
-          className="animate-wave1"
-        />
-        {/* Subtle grid lines */}
-        {[...Array(8)].map((_, i) => (
-          <line key={i} x1={i * 200} y1="0" x2={i * 200} y2="900"
-            stroke="#ffffff" strokeWidth="0.3" opacity="0.04" />
-        ))}
-        {[...Array(6)].map((_, i) => (
-          <line key={i} x1="0" y1={i * 150} x2="1440" y2={i * 150}
-            stroke="#ffffff" strokeWidth="0.3" opacity="0.04" />
-        ))}
-      </svg>
-    </div>
-  );
-}
 
 export default function Home() {
   const [messages, setMessages] = useState<Message[]>([]);
