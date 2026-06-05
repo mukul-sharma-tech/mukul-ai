@@ -15,10 +15,10 @@ interface WaveCfg {
 }
 
 const WAVES: WaveCfg[] = [
-  { yRatio: 0.20, amplitude: 28, freq: 0.0018, speed: 0.004, color: '#8b5cf6', glow: '#7c3aed', width: 1.8, alpha: 0.7 },
-  { yRatio: 0.38, amplitude: 34, freq: 0.0015, speed: 0.003, color: '#06b6d4', glow: '#0891b2', width: 1.8, alpha: 0.7 },
-  { yRatio: 0.56, amplitude: 26, freq: 0.0020, speed: 0.005, color: '#d946ef', glow: '#c026d3', width: 1.4, alpha: 0.6 },
-  { yRatio: 0.72, amplitude: 30, freq: 0.0016, speed: 0.0035, color: '#3b82f6', glow: '#2563eb', width: 1.4, alpha: 0.6 },
+  { yRatio: 0.20, amplitude: 28, freq: 0.004, speed: 0.004, color: '#8b5cf6', glow: '#7c3aed', width: 1.8, alpha: 0.7 },
+  { yRatio: 0.38, amplitude: 34, freq: 0.005, speed: 0.003, color: '#06b6d4', glow: '#0891b2', width: 1.8, alpha: 0.7 },
+  { yRatio: 0.56, amplitude: 26, freq: 0.004, speed: 0.005, color: '#d946ef', glow: '#c026d3', width: 1.4, alpha: 0.6 },
+  { yRatio: 0.72, amplitude: 30, freq: 0.005, speed: 0.0035, color: '#3b82f6', glow: '#2563eb', width: 1.4, alpha: 0.6 },
 ];
 
 // Boats — each tracks one wave
