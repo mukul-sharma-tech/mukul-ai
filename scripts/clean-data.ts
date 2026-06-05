@@ -1,29 +1,40 @@
-const API_BASE = 'http://localhost:3000/api/documents';
+import path from 'path';
+import fs from 'fs';
+import dns from 'dns';
+import { MongoClient } from 'mongodb';
 
-interface DeleteResponse {
-  success: boolean;
-  deletedCount: number;
-}
+dns.setServers(['8.8.8.8', '1.1.1.1']);
 
-async function cleanAllData(): Promise<void> {
-  console.log('🗑️  Deleting all vectors from database...\n');
-
-  try {
-    const response = await fetch(API_BASE, {
-      method: 'DELETE',
-    });
-
-    const result: DeleteResponse = await response.json();
-
-    if (result.success) {
-      console.log(`✅ Successfully deleted ${result.deletedCount} documents`);
-    } else {
-      console.log('❌ Failed to delete documents');
-    }
-  } catch (error) {
-    console.error('❌ Error:', error instanceof Error ? error.message : 'Unknown error');
-    console.log('\nMake sure the dev server is running: npm run dev');
+function loadEnv() {
+  const envPath = path.join(process.cwd(), '.env.local');
+  if (!fs.existsSync(envPath)) return;
+  const lines = fs.readFileSync(envPath, 'utf-8').split('\n');
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const idx = trimmed.indexOf('=');
+    if (idx === -1) continue;
+    const key = trimmed.slice(0, idx).trim();
+    const val = trimmed.slice(idx + 1).trim().replace(/^["']|["']$/g, '');
+    if (!process.env[key]) process.env[key] = val;
   }
 }
+loadEnv();
 
-cleanAllData();
+const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/mukul-ai';
+
+async function main() {
+  console.log('\n🗑️  Cleaning all vectors from MongoDB...\n');
+  const client = new MongoClient(MONGO_URI);
+  await client.connect();
+
+  const result = await client.db().collection('chunks').deleteMany({});
+  console.log(`✅ Deleted ${result.deletedCount} documents`);
+
+  await client.close();
+}
+
+main().catch(err => {
+  console.error('❌ Error:', err.message);
+  process.exit(1);
+});
