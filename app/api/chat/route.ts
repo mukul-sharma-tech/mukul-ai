@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getChunksCollection } from '@/lib/mongodb';
 import { generateEmbedding } from '@/lib/embeddings';
 import ollama from 'ollama';
+import { GoogleGenAI } from '@google/genai';
 
 const LLM_MODEL = 'gpt-oss::20b-cloud';
 
@@ -34,6 +35,36 @@ async function callGroq(
   }
 }
 
+// ── Gemini fallback ───────────────────────────────────────
+async function callGemini(
+  apiKey: string,
+  messages: { role: string; content: string }[],
+): Promise<string> {
+  const ai = new GoogleGenAI({ apiKey });
+
+  // Separate system prompt from conversation
+  const systemMsg = messages.find(m => m.role === 'system');
+  const chatMsgs  = messages.filter(m => m.role !== 'system');
+
+  // Map to Gemini content format
+  const contents = chatMsgs.map(m => ({
+    role:  m.role === 'assistant' ? 'model' : 'user',
+    parts: [{ text: m.content }],
+  }));
+
+  const response = await ai.models.generateContent({
+    model:  'gemini-2.5-flash',
+    contents,
+    config: {
+      systemInstruction: systemMsg?.content,
+      maxOutputTokens:   512,
+      temperature:       0.3,
+    },
+  });
+
+  return response.text ?? '';
+}
+
 async function generateResponse(
   messages: { role: string; content: string }[],
 ): Promise<string> {
@@ -64,11 +95,27 @@ async function generateResponse(
   // 3. Groq API 2
   const key2 = process.env.Groq_API_2;
   if (key2) {
-    const content = await callGroq(key2, messages);
-    if (content?.trim()) return content;
+    try {
+      const content = await callGroq(key2, messages);
+      if (content?.trim()) return content;
+    } catch (err) {
+      console.warn('Groq API 2 failed:', err instanceof Error ? err.message : err);
+    }
   }
 
-  throw new Error('All LLM providers failed');
+  // 4. Gemini 2.5 Flash
+  const geminiKey = process.env.gemini_api;
+  if (geminiKey) {
+    try {
+      console.log('Trying Gemini fallback...');
+      const content = await callGemini(geminiKey, messages);
+      if (content?.trim()) return content;
+    } catch (err) {
+      console.warn('Gemini failed:', err instanceof Error ? err.message : err);
+    }
+  }
+
+  throw new Error('All LLM providers failed (Ollama, Groq1, Groq2, Gemini)');
 }
 
 // ── GitHub commit lookup ──────────────────────────────────
