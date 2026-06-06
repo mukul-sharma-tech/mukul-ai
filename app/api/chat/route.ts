@@ -6,307 +6,138 @@ import { getAvailableSlots, bookAppointment } from '@/lib/calendar';
 import ollama from 'ollama';
 import { GoogleGenAI } from '@google/genai';
 
-const LLM_MODEL = 'gpt-oss:20b-cloud';
+const LLM_MODEL = 'llama3';
 
-// ── Groq ──────────────────────────────────────────────────
-async function callGroq(
-  apiKey: string,
-  messages: { role: string; content: string }[],
-): Promise<string> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 30000);
+// ── LLM providers ─────────────────────────────────────────
+async function callGroq(apiKey: string, messages: { role: string; content: string }[]): Promise<string> {
+  const ctrl  = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 30000);
   try {
     const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
-        messages,
-        temperature: 0.3,
-        max_tokens: 512,
-      }),
-      signal: controller.signal,
+      body: JSON.stringify({ model: 'llama-3.3-70b-versatile', messages, temperature: 0.3, max_tokens: 512 }),
+      signal: ctrl.signal,
     });
     clearTimeout(timer);
-    if (!res.ok) throw new Error(`Groq error ${res.status}: ${await res.text()}`);
-    const data = await res.json();
-    return data.choices?.[0]?.message?.content || '';
-  } catch (err) {
-    clearTimeout(timer);
-    throw err;
-  }
+    if (!res.ok) throw new Error(`Groq ${res.status}: ${await res.text()}`);
+    return (await res.json()).choices?.[0]?.message?.content || '';
+  } catch (err) { clearTimeout(timer); throw err; }
 }
 
-// ── Gemini fallback ───────────────────────────────────────
-async function callGemini(
-  apiKey: string,
-  messages: { role: string; content: string }[],
-): Promise<string> {
-  const ai = new GoogleGenAI({ apiKey });
-
-  // Separate system prompt from conversation
+async function callGemini(apiKey: string, messages: { role: string; content: string }[]): Promise<string> {
+  const ai        = new GoogleGenAI({ apiKey });
   const systemMsg = messages.find(m => m.role === 'system');
-  const chatMsgs  = messages.filter(m => m.role !== 'system');
-
-  // Map to Gemini content format
-  const contents = chatMsgs.map(m => ({
-    role:  m.role === 'assistant' ? 'model' : 'user',
-    parts: [{ text: m.content }],
-  }));
-
+  const contents  = messages
+    .filter(m => m.role !== 'system')
+    .map(m => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] }));
   const response = await ai.models.generateContent({
-    model:  'gemini-2.5-flash',
+    model: 'gemini-2.5-flash',
     contents,
-    config: {
-      systemInstruction: systemMsg?.content,
-      maxOutputTokens:   512,
-      temperature:       0.3,
-    },
+    config: { systemInstruction: systemMsg?.content, maxOutputTokens: 512, temperature: 0.3 },
   });
-
   return response.text ?? '';
 }
 
-async function generateResponse(
-  messages: { role: string; content: string }[],
-): Promise<string> {
-  // 1. Ollama (local) — 8s timeout
+async function generateResponse(messages: { role: string; content: string }[]): Promise<string> {
+  // 1. Ollama (local, 8s)
   try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 8000);
-    const response = await ollama.chat({ model: LLM_MODEL, messages, stream: false });
-    clearTimeout(timer);
-    const content = response.message.content;
-    if (content?.trim()) return content;
-    throw new Error('Empty response');
-  } catch (err) {
-    console.warn('Ollama failed, trying Groq:', err instanceof Error ? err.message : err);
+    const ctrl = new AbortController();
+    const t    = setTimeout(() => ctrl.abort(), 8000);
+    const res  = await ollama.chat({ model: LLM_MODEL, messages, stream: false });
+    clearTimeout(t);
+    if (res.message.content?.trim()) return res.message.content;
+  } catch (e) { console.warn('Ollama:', e instanceof Error ? e.message : e); }
+
+  // 2. Groq 1
+  if (process.env.Groq_API_1) {
+    try { const c = await callGroq(process.env.Groq_API_1, messages); if (c?.trim()) return c; }
+    catch (e) { console.warn('Groq1:', e instanceof Error ? e.message : e); }
   }
 
-  // 2. Groq API 1
-  const key1 = process.env.Groq_API_1;
-  if (key1) {
-    try {
-      const content = await callGroq(key1, messages);
-      if (content?.trim()) return content;
-    } catch (err) {
-      console.warn('Groq API 1 failed:', err instanceof Error ? err.message : err);
-    }
+  // 3. Groq 2
+  if (process.env.Groq_API_2) {
+    try { const c = await callGroq(process.env.Groq_API_2, messages); if (c?.trim()) return c; }
+    catch (e) { console.warn('Groq2:', e instanceof Error ? e.message : e); }
   }
 
-  // 3. Groq API 2
-  const key2 = process.env.Groq_API_2;
-  if (key2) {
-    try {
-      const content = await callGroq(key2, messages);
-      if (content?.trim()) return content;
-    } catch (err) {
-      console.warn('Groq API 2 failed:', err instanceof Error ? err.message : err);
-    }
+  // 4. Gemini
+  if (process.env.gemini_api) {
+    try { const c = await callGemini(process.env.gemini_api, messages); if (c?.trim()) return c; }
+    catch (e) { console.warn('Gemini:', e instanceof Error ? e.message : e); }
   }
 
-  // 4. Gemini 2.5 Flash
-  const geminiKey = process.env.gemini_api;
-  if (geminiKey) {
-    try {
-      console.log('Trying Gemini fallback...');
-      const content = await callGemini(geminiKey, messages);
-      if (content?.trim()) return content;
-    } catch (err) {
-      console.warn('Gemini failed:', err instanceof Error ? err.message : err);
-    }
-  }
-
-  throw new Error('All LLM providers failed (Ollama, Groq1, Groq2, Gemini)');
+  throw new Error('All LLM providers failed');
 }
 
-// ── Calendar intent detection ─────────────────────────────
-const AVAILABILITY_KEYWORDS = ['available', 'availability', 'free slot', 'free time', 'when can', 'book a call', 'book call', 'check calendar', 'book a slot', 'schedule a meeting', 'meeting'];
-const BOOKING_KEYWORDS = ['book', 'schedule a call', 'set up a call', 'confirm the call', 'reserve'];
+// ── Calendar booking state machine ────────────────────────
+// bookingState is passed in the request body from the frontend
+// States: null | 'NEED_DATE' | 'NEED_TIME' | 'NEED_NAME' | 'CONFIRM'
 
-// Check if we're mid-booking-flow (previous AI message showed slots)
-function isInBookingFlow(history: { role: string; content: string }[]): boolean {
-  const lastAssistant = [...history].reverse().find(m => m.role === 'assistant');
-  if (!lastAssistant) return false;
-  const c = lastAssistant.content.toLowerCase();
-  return c.includes('which time works') || c.includes('want to book') ||
-         c.includes('free slots') || c.includes('open slots') ||
-         c.includes("what's your name") || c.includes('your name') ||
-         c.includes('slot') || c.includes('book this');
+interface BookingState {
+  step:  'NEED_DATE' | 'NEED_TIME' | 'NEED_NAME' | 'CONFIRM';
+  date?: string;
+  time?: string;
+  name?: string;
+  email?: string;
 }
 
-function isAvailabilityQuestion(msg: string): boolean {
-  return AVAILABILITY_KEYWORDS.some(k => msg.toLowerCase().includes(k));
-}
+// Trigger words to START the booking flow
+const CALENDAR_TRIGGERS = [
+  'available', 'availability', 'free slot', 'free time', 'book a call',
+  'book a meeting', 'book a slot', 'schedule a call', 'schedule a meeting',
+  'book call', 'check calendar', 'is mukul free', 'mukul free',
+];
 
-function isBookingRequest(msg: string): boolean {
-  return BOOKING_KEYWORDS.some(k => msg.toLowerCase().includes(k));
-}
-
-// Also treat short replies in booking flow as booking intent
-function isBookingRelated(msg: string, history: { role: string; content: string }[]): boolean {
-  if (isBookingRequest(msg) || isAvailabilityQuestion(msg)) return true;
-  if (isInBookingFlow(history)) {
-    const lower = msg.toLowerCase().trim();
-    // "yes", "ok", "sure", "confirm", "go ahead", or a time like "2pm", "3 PM"
-    if (['yes', 'ok', 'sure', 'confirm', 'go ahead', 'yeah', 'yep', 'book it', 'book'].includes(lower)) return true;
-    if (extractTime(msg)) return true;
-    if (extractName(msg)) return true;
-    if (extractEmail(msg)) return true;
-    if (extractDate(msg)) return true;
-  }
-  return false;
+function triggersCalendar(msg: string): boolean {
+  const l = msg.toLowerCase();
+  return CALENDAR_TRIGGERS.some(k => l.includes(k));
 }
 
 function extractDate(msg: string): string | null {
   const lower = msg.toLowerCase();
-  const now = new Date();
-
+  const now   = new Date();
   if (lower.includes('today'))    return now.toISOString().split('T')[0];
   if (lower.includes('tomorrow')) {
     const t = new Date(now); t.setDate(t.getDate() + 1);
     return t.toISOString().split('T')[0];
   }
-
-  const isoMatch = msg.match(/\b(\d{4}-\d{2}-\d{2})\b/);
-  if (isoMatch) return isoMatch[1];
-
-  const months: Record<string, number> = {
-    january:1, february:2, march:3, april:4, may:5, june:6,
-    july:7, august:8, september:9, october:10, november:11, december:12,
-  };
+  const iso = msg.match(/\b(\d{4}-\d{2}-\d{2})\b/);
+  if (iso) return iso[1];
+  const months: Record<string, number> = { january:1,february:2,march:3,april:4,may:5,june:6,july:7,august:8,september:9,october:10,november:11,december:12 };
   const m1 = lower.match(/\b(january|february|march|april|may|june|july|august|september|october|november|december)\s+(\d{1,2})\b/);
   const m2 = lower.match(/\b(\d{1,2})\s+(january|february|march|april|may|june|july|august|september|october|november|december)\b/);
-  if (m1) return `${now.getFullYear()}-${String(months[m1[1]]).padStart(2,'0')}-${String(parseInt(m1[2])).padStart(2,'0')}`;
-  if (m2) return `${now.getFullYear()}-${String(months[m2[2]]).padStart(2,'0')}-${String(parseInt(m2[1])).padStart(2,'0')}`;
-
+  if (m1) return `${now.getFullYear()}-${String(months[m1[1]]).padStart(2,'0')}-${m1[2].padStart(2,'0')}`;
+  if (m2) return `${now.getFullYear()}-${String(months[m2[2]]).padStart(2,'0')}-${m2[1].padStart(2,'0')}`;
   return null;
 }
 
-// Must have explicit AM/PM OR HH:MM format — avoids grabbing random numbers
 function extractTime(msg: string): string | null {
-  // "3 PM", "3pm", "3:00 PM", "15:00"
   const withAmPm = msg.match(/\b(\d{1,2})(?::(\d{2}))?\s*(AM|PM|am|pm)\b/);
-  if (withAmPm) {
-    const h = withAmPm[1];
-    const m = withAmPm[2] || '00';
-    const ap = withAmPm[3].toUpperCase();
-    return `${h}:${m} ${ap}`;
-  }
-  // 24h "14:30"
+  if (withAmPm) return `${withAmPm[1]}:${withAmPm[2] || '00'} ${withAmPm[3].toUpperCase()}`;
+  // "after 12pm" → take the time part
+  const after = msg.match(/after\s+(\d{1,2})(?::(\d{2}))?\s*(AM|PM|am|pm)\b/i);
+  if (after) return `${after[1]}:${after[2] || '00'} ${after[3].toUpperCase()}`;
   const h24 = msg.match(/\b([01]?\d|2[0-3]):([0-5]\d)\b/);
   if (h24) return `${h24[1]}:${h24[2]}`;
-
   return null;
 }
 
-// Extract email
 function extractEmail(msg: string): string | null {
   const m = msg.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
   return m ? m[0] : null;
 }
 
-// Extract name — from "book for TIME, NAME, EMAIL" pattern or explicit phrases
 function extractName(msg: string): string | null {
-  // Pattern: "book for X pm, Name, email" — name is between first comma and email/second comma
-  const commaPattern = msg.match(/book[^,]+,\s*([^,@\n]+?)(?:,|\s+[a-zA-Z0-9._%+-]+@)/i);
-  if (commaPattern) {
-    const candidate = commaPattern[1].trim();
-    // Reject if it looks like a time or contains digits
-    if (candidate && !/\d/.test(candidate) && candidate.length < 40) return candidate;
-  }
-
-  // "my name is X", "I'm X", "name: X"
-  const explicit = msg.match(/(?:my name is|i'm|i am|name[:\s]+)\s*([A-Za-z][a-z]+(?: [A-Za-z][a-z]+)?)/i);
-  if (explicit) return explicit[1].trim();
-
-  // Single word that looks like a name (capital letter, no special chars, appears alone)
-  const singleName = msg.match(/^([A-Z][a-z]{2,})$/);
-  if (singleName) return singleName[1];
-
+  // "my name is X" or "I'm X"
+  const exp = msg.match(/(?:my name is|i'm|i am|name[:\s]+)\s*([A-Za-z][a-zA-Z\s]{1,30}?)(?:\s*,|\s*$)/i);
+  if (exp) return exp[1].trim();
+  // standalone single/double word name (capital start, no digits)
+  const single = msg.trim().match(/^([A-Z][a-z]{1,}(?:\s[A-Z][a-z]{1,})?)$/);
+  if (single) return single[1];
   return null;
 }
 
-// Only scan USER messages from history
-function userHistoryText(history: { role: string; content: string }[]): string {
-  return history.filter(m => m.role === 'user').map(m => m.content).join(' ');
-}
-
-async function handleCalendarIntent(
-  message: string,
-  conversationHistory: { role: string; content: string }[],
-): Promise<string | null> {
-
-  const inFlow     = isInBookingFlow(conversationHistory);
-  const isBooking  = isBookingRequest(message) || (inFlow && extractTime(message) !== null);
-  const isAvail    = isAvailabilityQuestion(message);
-  const isConfirm  = inFlow && ['yes','ok','sure','confirm','go ahead','yeah','yep','book it','book'].includes(message.toLowerCase().trim());
-
-  if (!isBooking && !isAvail && !isConfirm && !inFlow) return null;
-  if (!isBooking && !isAvail && !isConfirm && !isBookingRelated(message, conversationHistory)) return null;
-
-  // Only scan USER messages from history
-  const userHistory = conversationHistory.filter(m => m.role === 'user').map(m => m.content).join(' ');
-
-  const date  = extractDate(message)  || extractDate(userHistory);
-  const time  = extractTime(message)  || extractTime(userHistory);
-  const email = extractEmail(message) || extractEmail(userHistory);
-  const name  = extractName(message)  || extractName(userHistory);
-
-  // If user said "yes" / confirmed and we have date+time from history → book
-  if ((isConfirm || isBooking) && date && time) {
-    if (!name) return `What's your name?`;
-
-    try {
-      const startISO = parseTimeToISO(date, time);
-      const endISO   = new Date(new Date(startISO).getTime() + 30 * 60 * 1000).toISOString();
-
-      const event = await bookAppointment(
-        `Call with ${name}`,
-        `Booked via Mukul's AI Assistant\nName: ${name}${email ? `\nEmail: ${email}` : ''}`,
-        startISO,
-        endISO,
-        undefined,
-      );
-
-      return `✅ **Call booked!**\n\n- **Date:** ${date}\n- **Time:** ${time} IST\n- **Name:** ${name}\n${email ? `- **Email:** ${email}\n` : ''}\n[View in Calendar](${event.htmlLink})\n\nMukul will connect with you then!`;
-    } catch (err: any) {
-      return `Booking failed: ${err.message}. Please try again.`;
-    }
-  }
-
-  // Have time but need confirmation
-  if ((isBooking || inFlow) && date && time && !isConfirm) {
-    return `**${time}** on **${date}** — shall I book this? What's your name${email ? '' : ' and email'}?`;
-  }
-
-  // Have date but need time
-  if ((isBooking || inFlow) && date && !time) {
-    const slots = await getAvailableSlots(date).catch(() => []);
-    return slots.length
-      ? `Here are free slots on **${date}**:\n\n${slots.slice(0, 8).map(s => `- ${s}`).join('\n')}\n\nWhich time works?`
-      : `No free slots on ${date}. Try another date?`;
-  }
-
-  // Availability check
-  if (isAvail) {
-    const checkDate = extractDate(message) || new Date().toISOString().split('T')[0];
-    try {
-      const slots = await getAvailableSlots(checkDate);
-      if (!slots.length) return `Mukul is fully booked on **${checkDate}**. Try another date?`;
-      return `Here are Mukul's open slots on **${checkDate}** (IST):\n\n${slots.slice(0, 8).map(s => `- ${s}`).join('\n')}\n\nShare your name, preferred time, and email to book.`;
-    } catch {
-      return `Couldn't fetch availability. Email muku0784@gmail.com directly.`;
-    }
-  }
-
-  // Need a date still
-  if (!date) return `Sure! What date works for you?`;
-
-  return null;
-}
-
-// Parse "3:00 PM" + "2026-06-07" → UTC ISO
 function parseTimeToISO(date: string, time: string): string {
   const isPM  = /PM/i.test(time);
   const isAM  = /AM/i.test(time);
@@ -314,116 +145,136 @@ function parseTimeToISO(date: string, time: string): string {
   let [h, m]  = clean.split(':').map(n => parseInt(n) || 0);
   if (isPM && h !== 12) h += 12;
   if (isAM && h === 12) h = 0;
-
-  // IST = UTC+5:30
-  let utcH = h - 5;
-  let utcM = m - 30;
-  if (utcM < 0) { utcM += 60; utcH -= 1; }
-
+  let utcH = h - 5, utcM = m - 30;
+  if (utcM < 0) { utcM += 60; utcH--; }
   const dt = new Date(`${date}T00:00:00Z`);
   dt.setUTCHours(utcH, utcM, 0, 0);
   return dt.toISOString();
 }
-const COMMIT_KEYWORDS = [
-  'commit', 'last commit', 'recent commit', 'latest commit',
-  'commit history', 'last update', 'recently updated', 'last pushed',
-];
 
-const KNOWN_PROJECTS = [
-  'agento', 'ai-hire', 'edunitex', 'orbital creeper shield', 'sanskritam',
-  'knox neural shield', 'agenticiq', 'synapsee', 'circularchain', 'fluxmeter',
-  'switch', 'querygenius', 'ulkadrishti', 'astro-cadet', 'gigflow',
-  'ai gossip hub', 'rfp-optimize', 'chakra',
-];
+async function handleBookingState(
+  message: string,
+  state: BookingState,
+): Promise<{ response: string; newState: BookingState | null }> {
+  const lower = message.toLowerCase().trim();
 
-function isCommitQuestion(msg: string): boolean {
-  const lower = msg.toLowerCase();
-  return COMMIT_KEYWORDS.some(k => lower.includes(k));
-}
+  // ── NEED_DATE step ────────────────────────────────────
+  if (state.step === 'NEED_DATE') {
+    const date = extractDate(message);
+    if (!date) return { response: `What date works? (e.g. "tomorrow", "June 10")`, newState: state };
 
-function extractProjectName(msg: string): string | null {
-  const lower = msg.toLowerCase();
-  return KNOWN_PROJECTS.find(p => lower.includes(p)) || null;
-}
-
-async function fetchCommitInfo(projectName: string): Promise<string | null> {
-  try {
-    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
-    const res = await fetch(`${baseUrl}/api/github-repo-commit`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ project: projectName }),
-    });
-    const data = await res.json();
-    return data.result || data.message || null;
-  } catch {
-    return null;
+    const slots = await getAvailableSlots(date).catch(() => [] as string[]);
+    if (!slots.length) {
+      return { response: `Mukul is fully booked on **${date}**. Try another date?`, newState: state };
+    }
+    return {
+      response: `Here are Mukul's open slots on **${date}** (IST):\n\n${slots.slice(0,8).map(s => `- ${s}`).join('\n')}\n\nWhich time works?`,
+      newState: { ...state, step: 'NEED_TIME', date },
+    };
   }
+
+  // ── NEED_TIME step ────────────────────────────────────
+  if (state.step === 'NEED_TIME') {
+    const time = extractTime(message);
+    if (!time) return { response: `What time? (e.g. "2 PM", "10:30 AM")`, newState: state };
+    return {
+      response: `Got it — **${time}** on **${state.date}**. What's your name?`,
+      newState: { ...state, step: 'NEED_NAME', time },
+    };
+  }
+
+  // ── NEED_NAME step ────────────────────────────────────
+  if (state.step === 'NEED_NAME') {
+    const email = extractEmail(message);
+    const name  = extractName(message) || (message.trim().length < 40 && !/\d/.test(message) ? message.trim() : null);
+    if (!name) return { response: `What's your name?`, newState: state };
+    return {
+      response: `**${name}** — booking call on **${state.date}** at **${state.time}** IST.\n\nConfirm? (yes / no)${email ? '' : '\n\nAlso share your email to get a confirmation.'}`,
+      newState: { ...state, step: 'CONFIRM', name, email: email || undefined },
+    };
+  }
+
+  // ── CONFIRM step ──────────────────────────────────────
+  if (state.step === 'CONFIRM') {
+    if (['no', 'cancel', 'nope', 'stop'].includes(lower)) {
+      return { response: `No problem — booking cancelled. Let me know if you want to reschedule.`, newState: null };
+    }
+
+    if (['yes', 'ok', 'sure', 'confirm', 'yeah', 'yep', 'go ahead', 'book it', 'book'].includes(lower) || lower.includes('yes') || lower.includes('confirm')) {
+      try {
+        const startISO = parseTimeToISO(state.date!, state.time!);
+        const endISO   = new Date(new Date(startISO).getTime() + 30 * 60 * 1000).toISOString();
+        const event    = await bookAppointment(
+          `Call with ${state.name}`,
+          `Booked via Mukul's AI Assistant\nName: ${state.name}${state.email ? `\nEmail: ${state.email}` : ''}`,
+          startISO, endISO, undefined,
+        );
+        return {
+          response: `✅ **Call booked!**\n\n- **Date:** ${state.date}\n- **Time:** ${state.time} IST\n- **Name:** ${state.name}\n${state.email ? `- **Email:** ${state.email}\n` : ''}\n[View in Calendar](${event.htmlLink})\n\nMukul will connect with you then!`,
+          newState: null,
+        };
+      } catch (err: any) {
+        return { response: `Booking failed: ${err.message}. Please try again.`, newState: null };
+      }
+    }
+
+    // User gave extra info (email) before confirming
+    const email = extractEmail(message);
+    if (email) {
+      return {
+        response: `Got your email. Confirm booking for **${state.date}** at **${state.time}** IST for **${state.name}**?`,
+        newState: { ...state, email },
+      };
+    }
+
+    return { response: `Please confirm with "yes" to book, or "no" to cancel.`, newState: state };
+  }
+
+  return { response: `Something went wrong. Say "book a call" to start over.`, newState: null };
 }
+
+// ── GitHub commits ────────────────────────────────────────
+const COMMIT_KEYWORDS = ['commit', 'last commit', 'recent commit', 'latest commit', 'commit history', 'last update', 'recently updated', 'last pushed'];
+const KNOWN_PROJECTS  = ['agento','ai-hire','edunitex','orbital creeper shield','sanskritam','knox neural shield','agenticiq','synapsee','circularchain','fluxmeter','switch','querygenius','ulkadrishti','astro-cadet','gigflow','ai gossip hub','rfp-optimize','chakra'];
+
+function isCommitQuestion(msg: string)  { return COMMIT_KEYWORDS.some(k => msg.toLowerCase().includes(k)); }
+function extractProjectName(msg: string) { return KNOWN_PROJECTS.find(p => msg.toLowerCase().includes(p)) || null; }
 
 // ── Vector search ─────────────────────────────────────────
-async function vectorSearch(
-  query: string,
-  limit = 8,
-): Promise<{ content: string; metadata: any; score: number }[]> {
+async function vectorSearch(query: string, limit = 8) {
   try {
-    const queryEmbedding = await generateEmbedding(query);
-    const collection = await getChunksCollection();
-    const count = await collection.countDocuments();
-    if (count === 0) return [];
-
-    const documents = await collection.find({}).toArray();
-    const results = documents.map(doc => ({
-      content:  doc.content as string,
-      metadata: doc.metadata,
-      score:    cosineSimilarity(queryEmbedding, (doc.embedding as number[]) ?? []),
-    }));
-    results.sort((a, b) => b.score - a.score);
-    return results.slice(0, limit);
-  } catch (error) {
-    console.error('Error in vector search:', error);
-    return [];
-  }
+    const qEmb = await generateEmbedding(query);
+    const col  = await getChunksCollection();
+    if (await col.countDocuments() === 0) return [];
+    const docs = await col.find({}).toArray();
+    return docs
+      .map(d => ({ content: d.content as string, metadata: d.metadata, score: cosineSimilarity(qEmb, d.embedding ?? []) }))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, limit);
+  } catch { return []; }
 }
 
 function cosineSimilarity(a: number[], b: number[]): number {
   if (!a.length || a.length !== b.length) return 0;
   let dot = 0, na = 0, nb = 0;
-  for (let i = 0; i < a.length; i++) {
-    dot += a[i] * b[i];
-    na  += a[i] * a[i];
-    nb  += b[i] * b[i];
-  }
-  return na === 0 || nb === 0 ? 0 : dot / (Math.sqrt(na) * Math.sqrt(nb));
+  for (let i = 0; i < a.length; i++) { dot += a[i]*b[i]; na += a[i]*a[i]; nb += b[i]*b[i]; }
+  return na && nb ? dot / (Math.sqrt(na) * Math.sqrt(nb)) : 0;
 }
 
 // ── System prompt ─────────────────────────────────────────
-const JOB_DESCRIPTION = `Scaler 3.0 is India's first fully AI-native EdTech platform.
-They need: autonomous onboarding agents, conversational agents (text + voice), stateful agentic pipelines (LangGraph/LangChain/CrewAI), production-grade API serving, RAG pipelines, eval frameworks, adversarial red-teaming.
-Stack: production Python (async, typed), LLM APIs, Voice AI (Vapi/ElevenLabs), RAG.
-Stipend: up to 55k, 6-month internship, PPO opportunity.`;
+const JOB_DESCRIPTION = `Scaler 3.0 — India's first fully AI-native EdTech. Needs: autonomous agents, LangGraph/LangChain pipelines, production Python (async/typed), Voice AI (Vapi/ElevenLabs), RAG. Stipend ₹55k, 6-month, PPO.`;
 
 function buildSystemPrompt(): string {
-  return `You are Mukul's AI assistant — sharp, concise, and conversational.
+  return `You are Mukul's AI assistant. Speak concisely and professionally.
 
-Speak warmly and professionally. Use "Mukul has..." or "He built..." for factual answers. Use "I built..." when answering as Mukul in interview mode.
+- Greeting/small talk → 1-2 warm sentences.
+- "interview mukul" → say "Sure! Ask away — I'll answer as Mukul."
+- Interview questions → answer AS Mukul, first person, 3-5 sentences, facts only.
+- Skills/projects/experience → answer from context ONLY. If missing: "Reach Mukul at muku0784@gmail.com".
+- Calendar/booking → handled separately. Do NOT attempt to book — just acknowledge if asked.
 
-Respond based on intent:
-- Greeting / small talk / reactions → 1-2 warm sentences only.
-- "start interview" / "interview mukul" → say "Sure! Go ahead — I'll answer as Mukul." Nothing else.
-- Interview questions about Mukul → answer AS Mukul, first person, 3-5 sentences, specific facts only.
-- Questions about skills / projects / experience / education / fit → answer using ONLY facts from the context. If missing, say "I don't have that detail — reach Mukul at muku0784@gmail.com".
-- Availability / booking a call → say you can check Mukul's calendar and book directly in chat. Ask for their preferred date.
-
-Rules:
-- No mode labels, no internal structure labels in output
-- No tables
-- Bullets max 8 words each
-- Max 150 words per response
-- Bold key terms, backtick tech names
-- No <br> tags
-- Only mention projects from context — never invent
-
+Rules: no tables, bullets ≤8 words, ≤150 words, bold key terms, backtick tech, no <br>.
+Only mention real projects from context.
 Scaler role: ${JOB_DESCRIPTION}`;
 }
 
@@ -431,71 +282,82 @@ Scaler role: ${JOB_DESCRIPTION}`;
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { message, conversationHistory = [] } = body;
+    const { message, conversationHistory = [], bookingState = null } = body;
 
     if (!message || typeof message !== 'string') {
       return NextResponse.json({ error: 'Message is required' }, { status: 400 });
     }
 
-    // ── Calendar intent: availability / booking ───────────
-    const calendarResponse = await handleCalendarIntent(message, conversationHistory.slice(-6)).catch(() => null);
-    if (calendarResponse) {
-      return NextResponse.json({ success: true, response: calendarResponse });
+    // ── Active booking state machine ──────────────────────
+    if (bookingState) {
+      const { response, newState } = await handleBookingState(message, bookingState);
+      return NextResponse.json({ success: true, response, bookingState: newState });
     }
 
-    // ── Commit question: call GitHub API directly ─────────
-    if (isCommitQuestion(message)) {
-      const projectName = extractProjectName(message);
-      if (projectName) {
-        const commitInfo = await fetchCommitInfo(projectName);
-        if (commitInfo) {
-          return NextResponse.json({ success: true, response: commitInfo });
+    // ── Trigger new booking flow ──────────────────────────
+    if (triggersCalendar(message)) {
+      const date = extractDate(message);
+      if (date) {
+        const slots = await getAvailableSlots(date).catch(() => [] as string[]);
+        if (!slots.length) {
+          return NextResponse.json({
+            success: true,
+            response: `Mukul is fully booked on **${date}**. Try another date?`,
+            bookingState: { step: 'NEED_DATE' },
+          });
         }
+        return NextResponse.json({
+          success: true,
+          response: `Here are Mukul's open slots on **${date}** (IST):\n\n${slots.slice(0,8).map(s => `- ${s}`).join('\n')}\n\nWhich time works?`,
+          bookingState: { step: 'NEED_TIME', date },
+        });
       }
-      // No project found — fall through to normal RAG flow
+      return NextResponse.json({
+        success: true,
+        response: `Sure! What date works for you?`,
+        bookingState: { step: 'NEED_DATE' },
+      });
     }
 
-    // ── RAG context ───────────────────────────────────────
+    // ── Commit question ───────────────────────────────────
+    if (isCommitQuestion(message)) {
+      const proj = extractProjectName(message);
+      if (proj) {
+        const info = await getCommitHistory(proj).catch(() => null);
+        if (info) return NextResponse.json({ success: true, response: info });
+      }
+    }
+
+    // ── RAG + LLM ─────────────────────────────────────────
     const relevantDocs = await vectorSearch(message, 8);
+    const col          = await getChunksCollection();
+    const resumeDocs   = await col.find({ 'metadata.type': { $regex: '^resume' } }, { projection: { embedding: 0 } }).toArray();
 
-    // Always include all resume sections
-    const collection = await getChunksCollection();
-    const resumeDocs = await collection
-      .find({ 'metadata.type': { $regex: '^resume' } }, { projection: { embedding: 0 } })
-      .toArray();
+    const resumeCtx  = resumeDocs.map(d => `[${d.metadata?.section || d.metadata?.type}]\n${d.content}`).join('\n\n');
+    const resumeIds  = new Set(resumeDocs.map(d => String(d._id)));
+    const projectCtx = relevantDocs
+      .filter(d => !resumeIds.has(String(d.metadata?._id)) && !String(d.metadata?.type).startsWith('resume'))
+      .map(d => d.content).join('\n\n').slice(0, 2000);
 
-    const resumeContext = resumeDocs
-      .map(d => `[${d.metadata?.section || d.metadata?.type}]\n${d.content}`)
-      .join('\n\n');
+    let ctx = '';
+    if (resumeCtx)  ctx += `=== RESUME ===\n${resumeCtx}\n\n`;
+    if (projectCtx) ctx += `=== PROJECTS ===\n${projectCtx}`;
+    if (!ctx.trim()) ctx = 'No relevant context found.';
 
-    const resumeDocIds = new Set(resumeDocs.map(d => String(d._id)));
-    const projectContext = relevantDocs
-      .filter(d => !resumeDocIds.has(String(d.metadata?._id)) && !String(d.metadata?.type).startsWith('resume'))
-      .map(d => d.content)
-      .join('\n\n')
-      .slice(0, 2000);
-
-    let contextText = '';
-    if (resumeContext)  contextText += `=== RESUME ===\n${resumeContext}\n\n`;
-    if (projectContext) contextText += `=== PROJECTS ===\n${projectContext}`;
-    if (!contextText.trim()) contextText = 'No relevant context found.';
-
-    const messages = [
+    const msgs = [
       { role: 'system', content: buildSystemPrompt() },
       ...conversationHistory.slice(-4),
-      { role: 'user',   content: `Context:\n${contextText}\n\n---\nQuestion: ${message}` },
+      { role: 'user',   content: `Context:\n${ctx}\n\n---\nQuestion: ${message}` },
     ];
 
-    const totalChars = messages.reduce((s, m) => s + m.content.length, 0);
-    console.log(`[Chat] ~${Math.ceil(totalChars / 4)} tokens, ${totalChars} chars`);
-
-    const responseText = await generateResponse(messages);
-    return NextResponse.json({ success: true, response: responseText });
+    console.log(`[Chat] ~${Math.ceil(msgs.reduce((s,m) => s + m.content.length, 0) / 4)} tokens`);
+    const responseText = await generateResponse(msgs);
+    return NextResponse.json({ success: true, response: responseText, bookingState: null });
 
   } catch (error) {
     console.error('Error in chat:', error);
     return NextResponse.json(
-      { error: 'Failed to process chat message', details: error instanceof Error ? error.message : 'Unknown error' },
+      { error: 'Failed', details: error instanceof Error ? error.message : 'Unknown error' },
       { status: 500 },
     );
   }

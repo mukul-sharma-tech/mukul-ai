@@ -13,6 +13,7 @@ interface Message {
 interface ChatResponse {
   success: boolean;
   response: string;
+  bookingState?: any;
 }
 
 function sanitizeLLMOutput(text: string): string {
@@ -30,6 +31,7 @@ export default function Home() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [bookingState, setBookingState] = useState<any>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -54,6 +56,7 @@ export default function Home() {
         body: JSON.stringify({
           message: userMessage,
           conversationHistory: messages.slice(-5).map(m => ({ role: m.role, content: m.content })),
+          bookingState,
         }),
       });
       const data: ChatResponse = await response.json();
@@ -61,6 +64,7 @@ export default function Home() {
         role: 'assistant',
         content: data.success ? data.response : 'Something went wrong. Please try again.',
       }]);
+      if (data.success) setBookingState(data.bookingState ?? null);
     } catch {
       setMessages(prev => [...prev, {
         role: 'assistant',
