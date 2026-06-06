@@ -121,8 +121,19 @@ async function generateResponse(
 }
 
 // ── Calendar intent detection ─────────────────────────────
-const AVAILABILITY_KEYWORDS = ['available', 'availability', 'free slot', 'free time', 'when can', 'book a call', 'book call', 'check calendar'];
+const AVAILABILITY_KEYWORDS = ['available', 'availability', 'free slot', 'free time', 'when can', 'book a call', 'book call', 'check calendar', 'book a slot', 'schedule a meeting', 'meeting'];
 const BOOKING_KEYWORDS = ['book', 'schedule a call', 'set up a call', 'confirm the call', 'reserve'];
+
+// Check if we're mid-booking-flow (previous AI message showed slots)
+function isInBookingFlow(history: { role: string; content: string }[]): boolean {
+  const lastAssistant = [...history].reverse().find(m => m.role === 'assistant');
+  if (!lastAssistant) return false;
+  const c = lastAssistant.content.toLowerCase();
+  return c.includes('which time works') || c.includes('want to book') ||
+         c.includes('free slots') || c.includes('open slots') ||
+         c.includes("what's your name") || c.includes('your name') ||
+         c.includes('slot') || c.includes('book this');
+}
 
 function isAvailabilityQuestion(msg: string): boolean {
   return AVAILABILITY_KEYWORDS.some(k => msg.toLowerCase().includes(k));
@@ -130,6 +141,21 @@ function isAvailabilityQuestion(msg: string): boolean {
 
 function isBookingRequest(msg: string): boolean {
   return BOOKING_KEYWORDS.some(k => msg.toLowerCase().includes(k));
+}
+
+// Also treat short replies in booking flow as booking intent
+function isBookingRelated(msg: string, history: { role: string; content: string }[]): boolean {
+  if (isBookingRequest(msg) || isAvailabilityQuestion(msg)) return true;
+  if (isInBookingFlow(history)) {
+    const lower = msg.toLowerCase().trim();
+    // "yes", "ok", "sure", "confirm", "go ahead", or a time like "2pm", "3 PM"
+    if (['yes', 'ok', 'sure', 'confirm', 'go ahead', 'yeah', 'yep', 'book it', 'book'].includes(lower)) return true;
+    if (extractTime(msg)) return true;
+    if (extractName(msg)) return true;
+    if (extractEmail(msg)) return true;
+    if (extractDate(msg)) return true;
+  }
+  return false;
 }
 
 function extractDate(msg: string): string | null {
@@ -211,62 +237,71 @@ async function handleCalendarIntent(
   conversationHistory: { role: string; content: string }[],
 ): Promise<string | null> {
 
-  const isBooking     = isBookingRequest(message);
-  const isAvailability = isAvailabilityQuestion(message);
+  const inFlow     = isInBookingFlow(conversationHistory);
+  const isBooking  = isBookingRequest(message) || (inFlow && extractTime(message) !== null);
+  const isAvail    = isAvailabilityQuestion(message);
+  const isConfirm  = inFlow && ['yes','ok','sure','confirm','go ahead','yeah','yep','book it','book'].includes(message.toLowerCase().trim());
 
-  if (!isBooking && !isAvailability) return null;
+  if (!isBooking && !isAvail && !isConfirm && !inFlow) return null;
+  if (!isBooking && !isAvail && !isConfirm && !isBookingRelated(message, conversationHistory)) return null;
 
-  if (isBooking) {
-    // Extract from current message first, then user history only
-    const userHistory = userHistoryText(conversationHistory);
-    const allUserText = userHistory + ' ' + message;
+  // Only scan USER messages from history
+  const userHistory = conversationHistory.filter(m => m.role === 'user').map(m => m.content).join(' ');
 
-    const date  = extractDate(message)  || extractDate(userHistory);
-    const time  = extractTime(message)  || extractTime(userHistory);
-    const email = extractEmail(message) || extractEmail(userHistory);
-    const name  = extractName(message)  || extractName(userHistory);
+  const date  = extractDate(message)  || extractDate(userHistory);
+  const time  = extractTime(message)  || extractTime(userHistory);
+  const email = extractEmail(message) || extractEmail(userHistory);
+  const name  = extractName(message)  || extractName(userHistory);
 
-    // Have everything — book it
-    if (date && time && name) {
-      try {
-        const startISO = parseTimeToISO(date, time);
-        const endISO   = new Date(new Date(startISO).getTime() + 30 * 60 * 1000).toISOString();
-
-        const event = await bookAppointment(
-          `Call with ${name}`,
-          `Booked via Mukul's AI Assistant\nName: ${name}${email ? `\nEmail: ${email}` : ''}`,
-          startISO,
-          endISO,
-          undefined, // no attendees — avoids Domain-Wide Delegation error
-        );
-
-        return `✅ **Call booked!**\n\n- **Date:** ${date}\n- **Time:** ${time} IST\n- **Name:** ${name}\n${email ? `- **Email:** ${email}\n` : ''}\n[View in Calendar](${event.htmlLink})\n\nMukul will connect with you then!`;
-      } catch (err: any) {
-        return `Booking failed: ${err.message}. Please try again.`;
-      }
-    }
-
-    // Ask for what's missing
-    if (!date) return `Sure! What date works for you?`;
-    if (!time) {
-      const slots = await getAvailableSlots(date).catch(() => []);
-      return slots.length
-        ? `Here are free slots on **${date}**:\n\n${slots.slice(0, 8).map(s => `- ${s}`).join('\n')}\n\nWhich time works?`
-        : `What time on ${date} works for you?`;
-    }
+  // If user said "yes" / confirmed and we have date+time from history → book
+  if ((isConfirm || isBooking) && date && time) {
     if (!name) return `What's your name?`;
-  }
 
-  if (isAvailability) {
-    const date = extractDate(message) || new Date().toISOString().split('T')[0];
     try {
-      const slots = await getAvailableSlots(date);
-      if (!slots.length) return `Mukul is fully booked on **${date}**. Try another date?`;
-      return `Here are Mukul's open slots on **${date}** (IST):\n\n${slots.slice(0, 8).map(s => `- ${s}`).join('\n')}\n\nWant to book one? Share your name, preferred time, and email.`;
-    } catch {
-      return `Couldn't fetch availability right now. Email muku0784@gmail.com directly.`;
+      const startISO = parseTimeToISO(date, time);
+      const endISO   = new Date(new Date(startISO).getTime() + 30 * 60 * 1000).toISOString();
+
+      const event = await bookAppointment(
+        `Call with ${name}`,
+        `Booked via Mukul's AI Assistant\nName: ${name}${email ? `\nEmail: ${email}` : ''}`,
+        startISO,
+        endISO,
+        undefined,
+      );
+
+      return `✅ **Call booked!**\n\n- **Date:** ${date}\n- **Time:** ${time} IST\n- **Name:** ${name}\n${email ? `- **Email:** ${email}\n` : ''}\n[View in Calendar](${event.htmlLink})\n\nMukul will connect with you then!`;
+    } catch (err: any) {
+      return `Booking failed: ${err.message}. Please try again.`;
     }
   }
+
+  // Have time but need confirmation
+  if ((isBooking || inFlow) && date && time && !isConfirm) {
+    return `**${time}** on **${date}** — shall I book this? What's your name${email ? '' : ' and email'}?`;
+  }
+
+  // Have date but need time
+  if ((isBooking || inFlow) && date && !time) {
+    const slots = await getAvailableSlots(date).catch(() => []);
+    return slots.length
+      ? `Here are free slots on **${date}**:\n\n${slots.slice(0, 8).map(s => `- ${s}`).join('\n')}\n\nWhich time works?`
+      : `No free slots on ${date}. Try another date?`;
+  }
+
+  // Availability check
+  if (isAvail) {
+    const checkDate = extractDate(message) || new Date().toISOString().split('T')[0];
+    try {
+      const slots = await getAvailableSlots(checkDate);
+      if (!slots.length) return `Mukul is fully booked on **${checkDate}**. Try another date?`;
+      return `Here are Mukul's open slots on **${checkDate}** (IST):\n\n${slots.slice(0, 8).map(s => `- ${s}`).join('\n')}\n\nShare your name, preferred time, and email to book.`;
+    } catch {
+      return `Couldn't fetch availability. Email muku0784@gmail.com directly.`;
+    }
+  }
+
+  // Need a date still
+  if (!date) return `Sure! What date works for you?`;
 
   return null;
 }

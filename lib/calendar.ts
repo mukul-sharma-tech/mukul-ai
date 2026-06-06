@@ -4,18 +4,28 @@ const CALENDAR_ID = 'muku0784@gmail.com';
 const SCOPES = ['https://www.googleapis.com/auth/calendar'];
 
 function getCalendarClient() {
-  // On Vercel: store the entire JSON as GOOGLE_SERVICE_ACCOUNT_JSON env var
-  // Locally: reads from the JSON file path
   let credentials: any;
 
   if (process.env.GOOGLE_SERVICE_ACCOUNT_JSON) {
-    credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
+    try {
+      credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
+    } catch {
+      throw new Error('GOOGLE_SERVICE_ACCOUNT_JSON is set but contains invalid JSON');
+    }
   } else {
     // Local fallback — read the file
-    const fs = require('fs');
-    const path = require('path');
-    const keyPath = path.join(process.cwd(), 'data', 'mukul-ai-c90455154a6f.json');
-    credentials = JSON.parse(fs.readFileSync(keyPath, 'utf-8'));
+    try {
+      const fs   = require('fs');
+      const path = require('path');
+      const keyPath = path.join(process.cwd(), 'data', 'mukul-ai-c90455154a6f.json');
+      credentials = JSON.parse(fs.readFileSync(keyPath, 'utf-8'));
+    } catch {
+      throw new Error('Calendar not configured: set GOOGLE_SERVICE_ACCOUNT_JSON environment variable on Vercel');
+    }
+  }
+
+  if (!credentials.client_email || !credentials.private_key) {
+    throw new Error('Service account JSON is missing client_email or private_key');
   }
 
   const jwtClient = new auth.JWT({
