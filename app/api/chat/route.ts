@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getChunksCollection } from '@/lib/mongodb';
 import { generateEmbedding } from '@/lib/embeddings';
+import { getCommitHistory } from '@/lib/github';
 import ollama from 'ollama';
 import { GoogleGenAI } from '@google/genai';
 
