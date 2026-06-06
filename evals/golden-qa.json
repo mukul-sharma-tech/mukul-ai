@@ -1,0 +1,107 @@
+[
+  {
+    "id": "q1",
+    "question": "What is Mukul's CGPA?",
+    "expected": "9.26",
+    "category": "education",
+    "expected_chunks": ["resume-education", "resume-summary"]
+  },
+  {
+    "id": "q2",
+    "question": "Where did Mukul do his internship?",
+    "expected": "UIDAI (Unique Identification Authority of India) and Desire4Travels",
+    "category": "experience",
+    "expected_chunks": ["resume-experience"]
+  },
+  {
+    "id": "q3",
+    "question": "What did Mukul build at UIDAI?",
+    "expected": "20+ secure schema-validated microservices using Zod, scaled to 10M+ requests/month, cut P95 latency by 40% via Redis, prototyped LLM + Vapi helpline",
+    "category": "experience",
+    "expected_chunks": ["resume-experience"]
+  },
+  {
+    "id": "q4",
+    "question": "What is Agento?",
+    "expected": "Enterprise AI system for chat, voice, and visual interaction with enterprise data using LangChain and LangGraph, multi-tenant, built on Next.js TypeScript Azure Cosmos DB",
+    "category": "project",
+    "expected_chunks": ["project-agento", "github-agento"]
+  },
+  {
+    "id": "q5",
+    "question": "What tech stack does AgenticIQ use?",
+    "expected": "Next.js, TypeScript, Inngest, esbuild, MongoDB, AI Pipeline",
+    "category": "project",
+    "expected_chunks": ["project-agenticiq", "github-agenticiq"]
+  },
+  {
+    "id": "q6",
+    "question": "How many problems has Mukul solved on LeetCode?",
+    "expected": "720+",
+    "category": "achievements",
+    "expected_chunks": ["resume-achievements"]
+  },
+  {
+    "id": "q7",
+    "question": "What frameworks has Mukul used for agentic AI?",
+    "expected": "LangChain, LangGraph",
+    "category": "skills",
+    "expected_chunks": ["resume-skills", "resume-experience"]
+  },
+  {
+    "id": "q8",
+    "question": "What is Orbital Creeper Shield?",
+    "expected": "Autonomous security framework to protect ISRO satellite swarms from prompt injection worms, uses SHAP for explainability, built in Python",
+    "category": "project",
+    "expected_chunks": ["project-orbital creeper shield", "github-orbital-creeper-shield"]
+  },
+  {
+    "id": "q9",
+    "question": "What college does Mukul attend?",
+    "expected": "Maharaja Agrasen Institute of Technology, Delhi",
+    "category": "education",
+    "expected_chunks": ["resume-education"]
+  },
+  {
+    "id": "q10",
+    "question": "What is Chakra?",
+    "expected": "Fractal tiered storage engine in C++ optimized for HFT and payment ledgers, achieves 9.4M inserts/sec with O(1) amortized writes",
+    "category": "project",
+    "expected_chunks": ["project-chakra"]
+  },
+  {
+    "id": "q11",
+    "question": "What is Mukul's email?",
+    "expected": "muku0784@gmail.com",
+    "category": "contact",
+    "expected_chunks": ["resume-contact", "Header"]
+  },
+  {
+    "id": "q12",
+    "question": "What did Mukul achieve at Desire4Travels?",
+    "expected": "Reduced dashboard load time by 80%, secured 90% uptime with Jest test suites, built Python natural language search pipeline",
+    "category": "experience",
+    "expected_chunks": ["resume-experience"]
+  },
+  {
+    "id": "q13",
+    "question": "Does Mukul have experience with Voice AI?",
+    "expected": "Yes, used Vapi for speech-to-text helpline at UIDAI and Agento supports voice interaction",
+    "category": "skills",
+    "expected_chunks": ["resume-experience", "project-agento"]
+  },
+  {
+    "id": "q14",
+    "question": "What is Synapsee?",
+    "expected": "AI Market Validator using LangGraph, Next.js, MongoDB, Google Trends for startup feasibility analysis",
+    "category": "project",
+    "expected_chunks": ["project-synapsee"]
+  },
+  {
+    "id": "q15",
+    "question": "What certifications does Mukul have?",
+    "expected": "Samsung Innovation Campus AI, Cybersecurity Essentials (CISCO), Generative AI (Microsoft + LinkedIn), Python for Data Science (IBM)",
+    "category": "achievements",
+    "expected_chunks": ["resume-achievements"]
+  }
+]

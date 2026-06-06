@@ -352,7 +352,16 @@ export async function POST(request: NextRequest) {
 
     console.log(`[Chat] ~${Math.ceil(msgs.reduce((s,m) => s + m.content.length, 0) / 4)} tokens`);
     const responseText = await generateResponse(msgs);
-    return NextResponse.json({ success: true, response: responseText, bookingState: null });
+
+    // Expose retrieved sources for eval framework
+    const sources = [
+      ...resumeDocs.map(d => d.metadata?.section || d.metadata?.type || 'resume'),
+      ...relevantDocs
+        .filter(d => !String(d.metadata?.type).startsWith('resume'))
+        .map(d => d.metadata?.source || d.metadata?.type || 'unknown'),
+    ];
+
+    return NextResponse.json({ success: true, response: responseText, bookingState: null, sources });
 
   } catch (error) {
     console.error('Error in chat:', error);

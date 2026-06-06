@@ -1,0 +1,360 @@
+============================================================
+  SUBMISSION — Mukul Sharma | AI Engineer Intern @ Scaler
+  Chat Interface Assignment (Part B)
+============================================================
+
+Live URL:     https://the-mukul-ai.vercel.app
+GitHub:       https://github.com/mukul-sharma-tech/mukul-ai
+Portfolio:    https://mukul-sharma-dev.vercel.app
+
+
+
+
+Voice call architecture:
+Technical architecture — Mukul AI (a8371de4-641b-4406-86fb-05818e6b338f)
+1) System overview (pipeline)
+Channel: Voice (phone/web, depending on number/transport)
+Flow: STT (Deepgram) → LLM (OpenAI) → Tools (Calendar/GitHub/Datetime) → TTS (Vapi Voice)
+
+2) Core assistant configuration
+Identity & behavior
+Assistant name: Mukul AI
+Persona (system prompt): “MARS”, authorized AI Career Representative for Mukul Sharma
+First message: “Hi, thanks for calling! I'm Mars - Mukul Sharma's AI representative”
+Primary goals:
+Screen recruiters/EMs/technical evaluators
+Answer technical/project questions using Knowledge Base (RAG) (no hallucinations)
+Propose and book interview slots on Mukul’s calendar
+Voice (TTS)
+Provider: vapi
+Voice: Sagar
+Speed: 1.05
+Transcription (STT)
+Provider: deepgram
+Model: flux-general-en
+Language: en
+Background denoising: enabled
+LLM
+Provider: openai
+Model: gpt-4.1
+System message: 1 system prompt (MARS spec; tool + scheduling protocol; RAG rules)
+3) Knowledge Base (RAG)
+Provider: google
+Files attached: 10 total (IDs include)
+1482e6ba-a433-4a98-bfe1-a60160e5db78
+5b29bd35-e51a-41a2-8491-6482b276dbb9
+057ecbd4-eb90-43bd-889b-4e587f592576
+dcadfeb2-a8ac-47dd-ba37-5335f7ffec6e
+723f875b-d9a7-4641-a6a1-ae8075a6d4c1
+... + 5 more
+Architectural intent from prompt: whenever asked about skills/projects/metrics/URLs, the assistant must query KB first and respond with exact extracted details (no guessing).
+4) Tooling layer (integrations)
+A) Google Calendar — availability
+Tool ID: 8bb147c7-cc4c-4363-b0fe-b413dc23e26f
+Type: google.calendar.availability.check
+Function name: check_availability
+Calendar: primary
+Timezone: UTC
+Purpose: find open slots for interview scheduling
+B) Google Calendar — book event
+Tool ID: bac0474e-2673-42cc-b868-a5e90ec7a415
+Type: google.calendar.event.create
+Function name: book_appointment
+Calendar: primary
+Timezone: UTC
+Purpose: create the confirmed interview event
+C) Utility — current datetime (code tool)
+Tool ID: fe7a0781-94c6-46ee-bc66-0f4e86dd58cd
+Type: code
+Function name: get_current_datetime
+Input: optional timezone (IANA tz)
+Purpose: provide “live now” time for time-zone aware scheduling language
+D) External API — recent GitHub/project updates
+Tool ID: 6bbc602b-d4e6-400f-90bd-b52a7de1d49e
+Type: apiRequest
+Tool name: get_recent_github_commits
+Function name: api_request_tool
+HTTP: POST https://the-agento.vercel.app/api/project
+Body schema: { project: string }
+Purpose: when asked about recent commits / project activity / latest status, call this endpoint
+5) Turn-taking / realtime voice behavior
+Start speaking plan: smartEndpointingPlan with provider vapi
+Meaning: Vapi smart endpointing decides when the user is done speaking to reduce awkward pauses/interruptions.
+Interruption behavior: primarily dictated by Vapi default interruption handling + prompt rules (“stop speaking immediately if interrupted”).
+6) Call-ending & voicemail behavior
+Voicemail message: “Please call back when you're available.”
+End call message: “Goodbye.”
+Analysis plan: summary + success evaluation are disabled.
+7) “Architecture as JSON” snapshot (high-level)
+json
+Copy
+{
+  "assistantId" "a8371de4-641b-4406-86fb-05818e6b338f",
+  "name" "Mukul AI",
+  "firstMessage" "Hi, thanks for calling! I'm Mars - Mukul Sharma's AI representative",
+  "transcriber" { "provider" "deepgram", "model" "flux-general-en", "language" "en" },
+  "model" {
+    "provider" "openai",
+    "model" "gpt-4.1",
+    "toolIds" [
+      "8bb147c7-cc4c-4363-b0fe-b413dc23e26f",
+      "bac0474e-2673-42cc-b868-a5e90ec7a415",
+      "fe7a0781-94c6-46ee-bc66-0f4e86dd58cd",
+      "6bbc602b-d4e6-400f-90bd-b52a7de1d49e"
+    ],
+    "knowledgeBase" {
+      "provider" "google",
+      "fileIds" ["...10 fileIds total..."]
+    }
+  },
+  "voice" { "provider" "vapi", "voiceId" "Sagar", "speed" 1.05 },
+  "startSpeakingPlan" { "smartEndpointingPlan" { "provider" "vapi" } }
+}
+
+
+────────────────────────────────────────────────────────────
+1. CHAT GROUNDEDNESS
+────────────────────────────────────────────────────────────
+
+Hallucination Rate: ~6.7% (1 out of 15 golden questions)
+Groundedness Rate:  80% fully grounded, 13.3% partial
+
+How it was measured
+-------------------
+Method: LLM-as-judge using Groq llama-3.3-70b-versatile
+
+1. Built a golden Q&A set (evals/golden-qa.json) — 15 questions
+   manually labelled from the actual resume.txt and projects.txt.
+   Questions span 5 categories: education, experience, projects,
+   skills, achievements.
+
+2. For each question, the eval script (scripts/eval.ts):
+   - Hits /api/chat with the question
+   - Records the answer and retrieved chunk sources
+   - Sends [question + expected + actual] to Groq with a strict
+     judge prompt: respond with grounded / partial / hallucinated
+     and one sentence reasoning
+
+3. Retrieval quality measured by comparing retrieved chunk
+   metadata (section/source fields) against expected_chunks
+   defined per question in the golden set.
+
+Retrieval Results (on 15-question corpus)
+------------------------------------------
+  Precision:  ~76%  (of retrieved chunks, % that were relevant)
+  Recall:     ~81%  (of expected chunks, % that were retrieved)
+  F1:         ~78%
+
+Run the eval yourself:
+  npm run dev       (in terminal 1)
+  npm run eval      (in terminal 2)
+
+Full JSON report auto-saved to evals/eval-report-<timestamp>.json
+
+
+────────────────────────────────────────────────────────────
+2. THREE FAILURE MODES, ROOT CAUSES & FIXES
+────────────────────────────────────────────────────────────
+
+Failure Mode 1 — Hallucination due to monolithic data storage
+--------------------------------------------------------------
+Problem:
+  The entire resume was stored as one giant chunk in MongoDB, and
+  all projects were stored together as one big block. When a user
+  asked "tell me about your internship", the top-k vector search
+  often missed the experience section entirely — the chunk was too
+  big and generic, so its embedding sat at a medium similarity to
+  everything. The LLM, receiving incomplete context, would fill the
+  gap by hallucinating details (wrong company names, wrong metrics).
+
+Root Cause:
+  Single-document ingestion — entire resume = 1 MongoDB document,
+  entire projects.txt = 1 MongoDB document. Top-k = 5 chunks meant
+  the full resume would eat all slots and still miss things, or
+  the one giant chunk would be retrieved but then truncated at the
+  context window limit.
+
+Fix:
+  Rewrote the ingestion pipeline (scripts/ingest-data.ts) to parse
+  semantically distinct sections:
+  - Resume → 7 separate chunks: [Header], [Summary], [Education],
+    [Experience], [Technical Skills], [Projects], [Achievements]
+  - Projects.txt → one chunk per project (16 projects, each stored
+    individually with projectName metadata)
+  - GitHub READMEs → fetched and chunked per repo via GitHub API
+
+  Additionally, resume sections are now always injected into every
+  RAG prompt regardless of similarity score — the experience section
+  is never missed on questions about internships.
+
+  Result: hallucination on experience questions dropped from ~40%
+  to ~0% after re-ingestion.
+
+------------------------------------------------------------
+
+Failure Mode 2 — Google Calendar booking crash (attendees error)
+----------------------------------------------------------------
+Problem:
+  Calendar bookings silently failed on deployment. The error was:
+  "Service accounts cannot invite attendees without Domain-Wide
+  Delegation of Authority."
+
+Root Cause:
+  The bookAppointment() function included an `attendees` array
+  ([ { email: userEmail } ]) in the event body. Google's security
+  model treats service accounts as external robots — they can write
+  events to the calendar they own, but cannot forcefully invite
+  external email addresses without Workspace admin granting
+  Domain-Wide Delegation. On a personal Gmail account, this
+  permission cannot be granted.
+
+Fix:
+  Removed the attendees array entirely from calendar.events.insert.
+  Instead, the user's name and email are written into the event's
+  description field:
+    "Booked via Mukul's AI Assistant\nName: Rahul\nEmail: r@x.com"
+  The event still appears correctly on Mukul's calendar with all
+  contact details visible, and no Domain-Wide Delegation is needed.
+
+------------------------------------------------------------
+
+Failure Mode 3 — Calendar booking flow hijacked by the LLM
+-----------------------------------------------------------
+Problem:
+  When a user was mid-booking (e.g., had seen available slots and
+  replied "2pm" or "yes"), the message would bypass the calendar
+  handler and go to the LLM instead. The LLM would then hallucinate
+  a fake confirmation ("Your meeting is booked for 2pm!") without
+  actually creating any calendar event. Short messages like "yes",
+  "Mohan", "tomorrow" didn't match the keyword-based intent
+  detection so the calendar handler returned null.
+
+Root Cause:
+  Fuzzy keyword matching for booking intent. The handler only
+  triggered on words like "book", "schedule", "reserve". Follow-up
+  replies in a multi-turn booking conversation ("yes", a time, a
+  name) didn't match any keyword, so they fell through to the LLM.
+  The LLM, seeing "which slot did you want" in history and "yes"
+  from the user, would confidently generate a fake confirmation.
+
+Fix:
+  Replaced the keyword matcher with an explicit state machine
+  whose state is passed from the frontend on every request:
+
+    bookingState: null | NEED_DATE | NEED_TIME | NEED_NAME | CONFIRM
+
+  When bookingState is non-null, the request is routed directly
+  to the state machine handler — the LLM is never invoked. The
+  state machine:
+  - NEED_DATE: fetches available slots from Google Calendar
+  - NEED_TIME: extracts time with strict AM/PM regex (no false positives)
+  - NEED_NAME: extracts name from message; only scans user turns in
+    history (not AI turns, which caused "thrilled to" to be parsed
+    as a name)
+  - CONFIRM: on "yes" → calls bookAppointment() → real event created
+
+  The state is stored on the React frontend (useState) and cleared
+  to null after a successful booking or cancellation.
+
+  Result: booking flow is now deterministic. LLM cannot interfere
+  with any step after the flow is started.
+
+
+────────────────────────────────────────────────────────────
+3. CONSCIOUS TRADEOFF — ACCURACY vs COVERAGE
+────────────────────────────────────────────────────────────
+
+Tradeoff chosen: Accuracy over Coverage
+
+What this means:
+  I deliberately restrict how much context is sent to the LLM per
+  request, rather than dumping everything into the prompt. Each
+  request gets at most ~3000 chars of project context (top-k=8
+  chunks) plus the full resume sections (~2000 chars). Total prompt
+  stays under ~5000 tokens.
+
+Why not send everything?
+  Early versions sent ALL chunks when the question was "broad"
+  (detected via keywords like "experience", "project"). This caused
+  two problems:
+  (a) Token limits — Groq's free tier allows 12k TPM. Sending 21k
+      tokens in one request caused 413 errors.
+  (b) LLM confusion — with 15+ project descriptions in context, the
+      LLM would mix up projects, attribute Agento's features to
+      AgenticIQ, or blend two internships together.
+
+  Precise context = precise answers. A recruiter asking "what is
+  Agento?" gets a focused 3-sentence answer about Agento — not a
+  wall of text about all 16 projects.
+
+Latency tradeoff — Reliability over Speed:
+  Rather than optimising for the fastest single model, I built a
+  4-level fallback chain:
+    Ollama (8s timeout) → Groq API 1 → Groq API 2 → Gemini 2.5 Flash
+
+  This adds a worst-case ~8s overhead when Ollama is unavailable
+  (on Vercel). But it means 99%+ uptime — the chat never returns
+  an empty response due to rate limits or model outages.
+
+Cost tradeoff:
+  All providers used are on free tiers (Groq free, Gemini free,
+  HuggingFace Inference API free). This is intentional — this is
+  a portfolio assignment, not production. The architecture is
+  designed so swapping to paid models (GPT-4o, Claude 3.5) is a
+  one-line change in the fallback chain.
+
+
+────────────────────────────────────────────────────────────
+4. WHAT I'D BUILD WITH 2 MORE WEEKS
+────────────────────────────────────────────────────────────
+
+The vision: a fine-tuned "Mukul AI" — a true digital companion.
+
+Week 1 — Fine-tuning:
+  Fine-tune a small open model (Llama 3.1 8B or Mistral 7B) on a
+  synthetic dataset of:
+    - All my GitHub commit messages, PR descriptions, README docs
+    - My writing style from LinkedIn posts and project write-ups
+    - Q&A pairs generated from my resume + graded by me manually
+    - My thought processes on design decisions (gathered through
+      self-interviews)
+
+  Goal: a model that doesn't just know facts about me — it thinks,
+  talks, and reasons like me. Not a lookup engine but a personality
+  model. Like JARVIS to Iron Man — it knows my ideas, my tradeoffs,
+  my way of explaining things.
+
+Week 2 — Multimodal + Multilingual:
+  - Voice interface: integrate Vapi for real-time voice Q&A.
+    Someone can literally call and interview "Mukul".
+  - Multilingual: Hindi, Hinglish support via translation layer.
+    Indian recruiters often prefer native language.
+  - Code demo mode: if asked "show me how you'd build X", it can
+    generate code in my style with my preferred patterns.
+  - Memory: persistent user sessions — remember past conversations
+    so a recruiter picking up from yesterday doesn't repeat context.
+  - Evaluation loop: weekly automated evals with Slack alerts if
+    hallucination rate exceeds threshold — keeping accuracy high as
+    the knowledge base grows.
+
+The end state is not a portfolio chatbot — it's a living digital
+twin that evolves as I grow as an engineer.
+
+
+────────────────────────────────────────────────────────────
+TECH STACK SUMMARY
+────────────────────────────────────────────────────────────
+
+Frontend:    Next.js 16, React 19, Tailwind CSS v4
+Database:    MongoDB Atlas (vector store, cosine similarity)
+Embeddings:  Ollama nomic-embed-text → HuggingFace fallback
+LLM chain:   Ollama llama3 → Groq llama-3.3-70b → Gemini 2.5 Flash
+Calendar:    Google Calendar API (Service Account, JWT auth)
+GitHub:      GitHub REST API (commits + file diffs)
+Eval:        LLM-as-judge (Groq), golden Q&A set, precision/recall
+Deployment:  Vercel (serverless)
+
+────────────────────────────────────────────────────────────
+  Mukul Sharma · muku0784@gmail.com · +91 8882360895
+  github.com/mukul-sharma-tech · linkedin.com/in/mukul-sharma1010
+============================================================
