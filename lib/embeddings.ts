@@ -1,106 +1,73 @@
 import ollama from 'ollama';
+import { HfInference } from '@huggingface/inference';
 
-const EMBEDDING_MODEL = 'nomic-embed-text';
+const OLLAMA_MODEL = 'nomic-embed-text';
+const HF_MODEL     = process.env.HF_EMBEDDING_MODEL || 'sentence-transformers/all-MiniLM-L6-v2';
 
-export interface EmbeddingResult {
-  embedding: number[];
-  text: string;
-}
-
+// ── Embedding with Ollama → HuggingFace fallback ──────────
 export async function generateEmbedding(text: string): Promise<number[]> {
+  // 1. Try Ollama (local — works in dev)
   try {
-    const response = await ollama.embeddings({
-      model: EMBEDDING_MODEL,
-      prompt: text,
-    });
-    return response.embedding;
-  } catch (error) {
-    console.error('Error generating embedding:', error);
-    throw new Error('Failed to generate embedding. Make sure Ollama is running with nomic-embed-text model.');
+    const res = await ollama.embeddings({ model: OLLAMA_MODEL, prompt: text });
+    if (res.embedding?.length) return res.embedding;
+    throw new Error('Empty embedding from Ollama');
+  } catch (err) {
+    console.warn('[Embed] Ollama failed, trying HuggingFace:', (err as Error).message);
+  }
+
+  // 2. Fallback: HuggingFace Inference API (works on cloud/Vercel)
+  const hfToken = process.env.HF_TOKEN;
+  if (!hfToken) {
+    throw new Error('[Embed] HF_TOKEN not set and Ollama unavailable — embedding failed');
+  }
+
+  try {
+    const hf     = new HfInference(hfToken);
+    const result = await hf.featureExtraction({ model: HF_MODEL, inputs: text });
+    const embedding = Array.isArray(result[0])
+      ? (result as number[][])[0]
+      : (result as number[]);
+    console.log(`[Embed] HuggingFace OK (${embedding.length} dims)`);
+    return embedding;
+  } catch (err) {
+    throw new Error(`[Embed] HuggingFace also failed: ${(err as Error).message}`);
   }
 }
 
 export async function generateBatchEmbeddings(texts: string[]): Promise<number[][]> {
   const embeddings: number[][] = [];
-  
   for (const text of texts) {
-    const embedding = await generateEmbedding(text);
-    embeddings.push(embedding);
+    embeddings.push(await generateEmbedding(text));
   }
-  
   return embeddings;
 }
 
-// Smart chunking that preserves semantic units
-export function chunkText(text: string, maxChunkSize: number = 500, overlap: number = 50): string[] {
-  const chunks: string[] = [];
-  
-  // Split by double newlines (sections) first
+// Smart chunking that preserves semantic sections
+export function chunkText(text: string, maxChunkSize = 500, _overlap = 50): string[] {
   const sections = text.split(/\n\s*\n/);
-  
+  const chunks: string[] = [];
+
   for (const section of sections) {
-    const trimmedSection = section.trim();
-    if (!trimmedSection) continue;
-    
-    // If section is small enough, add as-is
-    if (trimmedSection.length <= maxChunkSize) {
-      chunks.push(trimmedSection);
+    const trimmed = section.trim();
+    if (!trimmed) continue;
+
+    if (trimmed.length <= maxChunkSize) {
+      chunks.push(trimmed);
     } else {
-      // Split large sections by sentences
-      const sentences = trimmedSection.split(/(?<=[.!?])\s+/);
-      let currentChunk = '';
-      
+      const sentences = trimmed.split(/(?<=[.!?])\s+/);
+      let current = '';
       for (const sentence of sentences) {
-        if (currentChunk.length + sentence.length + 1 > maxChunkSize && currentChunk.length > 0) {
-          chunks.push(currentChunk.trim());
-          // Small overlap
-          const words = currentChunk.split(' ');
-          if (words.length > 10) {
-            currentChunk = words.slice(-5).join(' ') + ' ' + sentence;
-          } else {
-            currentChunk = sentence;
-          }
+        if (current.length + sentence.length + 1 > maxChunkSize && current.length > 0) {
+          chunks.push(current.trim());
+          const words = current.split(' ');
+          current = words.slice(-5).join(' ') + ' ' + sentence;
         } else {
-          currentChunk += (currentChunk.length > 0 ? ' ' : '') + sentence;
+          current += (current ? ' ' : '') + sentence;
         }
       }
-      
-      if (currentChunk.trim().length > 0) {
-        chunks.push(currentChunk.trim());
-      }
+      if (current.trim()) chunks.push(current.trim());
     }
   }
-  
-  return chunks.filter(c => c.length > 20); // Filter out very short chunks
-}
 
-// Chunk with metadata for better context
-export function chunkWithMetadata(text: string, type: string): { content: string; type: string }[] {
-  const chunks: { content: string; type: string }[] = [];
-  
-  // Split by clear sections
-  const lines = text.split('\n');
-  let currentSection = '';
-  let sectionType = type;
-  
-  for (const line of lines) {
-    const trimmedLine = line.trim();
-    
-    // Detect section headers
-    if (trimmedLine.match(/^(EXPERIENCE|EDUCATION|PROJECTS|SKILLS|ACHIEVEMENTS|Summary|Technical Skills)/i)) {
-      if (currentSection.trim()) {
-        chunks.push({ content: currentSection.trim(), type: sectionType });
-      }
-      currentSection = trimmedLine + '\n';
-      sectionType = trimmedLine.toUpperCase();
-    } else {
-      currentSection += line + '\n';
-    }
-  }
-  
-  if (currentSection.trim()) {
-    chunks.push({ content: currentSection.trim(), type: sectionType });
-  }
-  
-  return chunks;
+  return chunks.filter(c => c.length > 20);
 }
