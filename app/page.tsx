@@ -190,6 +190,16 @@ export default function Home() {
                       tr: ({ children }) => <tr className="border-b border-white/10">{children}</tr>,
                       th: ({ children }) => <th className="px-3 py-2 text-left text-white font-medium text-xs whitespace-nowrap">{children}</th>,
                       td: ({ children }) => <td className="px-3 py-2 text-white/70 text-xs align-top">{children}</td>,
+                      a: ({ href, children }) => (
+                        <a
+                          href={href}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-cyan-400 hover:text-cyan-300 underline underline-offset-2 decoration-cyan-400/50 hover:decoration-cyan-300 transition-colors"
+                        >
+                          {children}
+                        </a>
+                      ),
                     }}
                   >
                     {sanitizeLLMOutput(msg.content)}

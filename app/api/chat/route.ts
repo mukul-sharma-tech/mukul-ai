@@ -3,38 +3,51 @@ import { getChunksCollection } from '@/lib/mongodb';
 import { generateEmbedding } from '@/lib/embeddings';
 import ollama from 'ollama';
 
-const LLM_MODEL = 'llama3';
+const LLM_MODEL = 'gpt-oss::20b-cloud';
 
-// ── Groq fallback ──────────────────────────────────────────
-async function callGroq(apiKey: string, messages: { role: string; content: string }[]): Promise<string> {
-  const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: 'llama-3.3-70b-versatile',
-      messages,
-      temperature: 0.3,
-      max_tokens: 1024,
-    }),
-  });
-  if (!res.ok) throw new Error(`Groq error ${res.status}: ${await res.text()}`);
-  const data = await res.json();
-  return data.choices?.[0]?.message?.content || '';
+// ── Groq ──────────────────────────────────────────────────
+async function callGroq(
+  apiKey: string,
+  messages: { role: string; content: string }[],
+): Promise<string> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 30000);
+  try {
+    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        model: 'llama-3.3-70b-versatile',
+        messages,
+        temperature: 0.3,
+        max_tokens: 512,
+      }),
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    if (!res.ok) throw new Error(`Groq error ${res.status}: ${await res.text()}`);
+    const data = await res.json();
+    return data.choices?.[0]?.message?.content || '';
+  } catch (err) {
+    clearTimeout(timer);
+    throw err;
+  }
 }
 
-// Try Ollama → Groq API 1 → Groq API 2
-async function generateResponse(messages: { role: string; content: string }[]): Promise<string> {
-  // 1. Ollama (local)
+async function generateResponse(
+  messages: { role: string; content: string }[],
+): Promise<string> {
+  // 1. Ollama (local) — 8s timeout
   try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8000);
     const response = await ollama.chat({ model: LLM_MODEL, messages, stream: false });
+    clearTimeout(timer);
     const content = response.message.content;
     if (content?.trim()) return content;
     throw new Error('Empty response');
   } catch (err) {
-    console.warn('Ollama failed:', err instanceof Error ? err.message : err);
+    console.warn('Ollama failed, trying Groq:', err instanceof Error ? err.message : err);
   }
 
   // 2. Groq API 1
@@ -57,65 +70,64 @@ async function generateResponse(messages: { role: string; content: string }[]): 
 
   throw new Error('All LLM providers failed');
 }
-// ──────────────────────────────────────────────────────────
 
-const JOB_DESCRIPTION = `
-## Role: AI Engineer Intern at Scaler
+// ── GitHub commit lookup ──────────────────────────────────
+const COMMIT_KEYWORDS = [
+  'commit', 'last commit', 'recent commit', 'latest commit',
+  'commit history', 'last update', 'recently updated', 'last pushed',
+];
 
-Scaler 3.0 is India's first fully AI-native EdTech platform. We're building autonomous AI agents for the entire learner experience.
+const KNOWN_PROJECTS = [
+  'agento', 'ai-hire', 'edunitex', 'orbital creeper shield', 'sanskritam',
+  'knox neural shield', 'agenticiq', 'synapsee', 'circularchain', 'fluxmeter',
+  'switch', 'querygenius', 'ulkadrishti', 'astro-cadet', 'gigflow',
+  'ai gossip hub', 'rfp-optimize', 'chakra',
+];
 
-### What You'll Build:
-- Autonomous onboarding agents (zero human intervention)
-- Conversational agents (text + voice) for check-ins, nudges, doubt resolution
-- Stateful agentic pipelines (LangGraph, LangChain, CrewAI)
-- Production-grade API serving: streaming, low-latency, concurrent-safe
-- Eval frameworks and feedback loops (LLM-as-judge, RAGs)
-- End-to-end test suites including adversarial red-teaming
+function isCommitQuestion(msg: string): boolean {
+  const lower = msg.toLowerCase();
+  return COMMIT_KEYWORDS.some(k => lower.includes(k));
+}
 
-### Requirements:
-- Production-quality Python (async, typed)
-- LLM APIs experience (OpenAI, Claude, Gemini)
-- Agentic frameworks: LangGraph, LangChain, CrewAI
-- Bonus: Voice AI (Vapi, Retell, ElevenLabs), RAG pipelines, evals
+function extractProjectName(msg: string): string | null {
+  const lower = msg.toLowerCase();
+  return KNOWN_PROJECTS.find(p => lower.includes(p)) || null;
+}
 
-### What We Value:
-- Shipped AI agents to real users
-- Obsession over system feel and user experience
-- End-to-end ownership of outcomes
-- Ship fast, flag blockers early
+async function fetchCommitInfo(projectName: string): Promise<string | null> {
+  try {
+    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
+    const res = await fetch(`${baseUrl}/api/github-repo-commit`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ project: projectName }),
+    });
+    const data = await res.json();
+    return data.result || data.message || null;
+  } catch {
+    return null;
+  }
+}
 
-### Offer:
-- Stipend: Up to 55k
-- 6-month internship with PPO opportunity
-- Full ownership of production AI system
-`;
-
-async function vectorSearch(query: string, limit: number = 10): Promise<{ content: string; metadata: any; score: number }[]> {
+// ── Vector search ─────────────────────────────────────────
+async function vectorSearch(
+  query: string,
+  limit = 8,
+): Promise<{ content: string; metadata: any; score: number }[]> {
   try {
     const queryEmbedding = await generateEmbedding(query);
     const collection = await getChunksCollection();
-    
     const count = await collection.countDocuments();
-    if (count === 0) {
-      return [];
-    }
-    
+    if (count === 0) return [];
+
     const documents = await collection.find({}).toArray();
-    
-    const results = documents.map(doc => {
-      const similarity = cosineSimilarity(queryEmbedding, doc.embedding);
-      return {
-        content: doc.content,
-        metadata: doc.metadata,
-        score: similarity,
-      };
-    });
-    
+    const results = documents.map(doc => ({
+      content:  doc.content as string,
+      metadata: doc.metadata,
+      score:    cosineSimilarity(queryEmbedding, (doc.embedding as number[]) ?? []),
+    }));
     results.sort((a, b) => b.score - a.score);
-    
-    // Return more results and filter by relevance threshold
-    const threshold = 0.3;
-    return results.filter(r => r.score > threshold).slice(0, limit);
+    return results.slice(0, limit);
   } catch (error) {
     console.error('Error in vector search:', error);
     return [];
@@ -123,129 +135,109 @@ async function vectorSearch(query: string, limit: number = 10): Promise<{ conten
 }
 
 function cosineSimilarity(a: number[], b: number[]): number {
-  if (a.length !== b.length) return 0;
-  
-  let dotProduct = 0;
-  let normA = 0;
-  let normB = 0;
-  
+  if (!a.length || a.length !== b.length) return 0;
+  let dot = 0, na = 0, nb = 0;
   for (let i = 0; i < a.length; i++) {
-    dotProduct += a[i] * b[i];
-    normA += a[i] * a[i];
-    normB += b[i] * b[i];
+    dot += a[i] * b[i];
+    na  += a[i] * a[i];
+    nb  += b[i] * b[i];
   }
-  
-  if (normA === 0 || normB === 0) return 0;
-  return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
+  return na === 0 || nb === 0 ? 0 : dot / (Math.sqrt(na) * Math.sqrt(nb));
 }
+
+// ── System prompt ─────────────────────────────────────────
+const JOB_DESCRIPTION = `Scaler 3.0 is India's first fully AI-native EdTech platform.
+They need: autonomous onboarding agents, conversational agents (text + voice), stateful agentic pipelines (LangGraph/LangChain/CrewAI), production-grade API serving, RAG pipelines, eval frameworks, adversarial red-teaming.
+Stack: production Python (async, typed), LLM APIs, Voice AI (Vapi/ElevenLabs), RAG.
+Stipend: up to 55k, 6-month internship, PPO opportunity.`;
 
 function buildSystemPrompt(): string {
-  return `You are Mukul's AI assistant — sharp, concise, and conversational. You represent Mukul to recruiters.
+  return `You are Mukul's AI assistant — sharp, concise, and conversational.
 
-## PERSONALITY:
-- Talk in first person as Mukul's representative ("Mukul has...", "He built...", "Yes, he did...")
-- Be warm but professional — like a smart recruiter who knows the candidate well
-- Never be robotic or dump raw data
+Speak warmly and professionally. Use "Mukul has..." or "He built..." for factual answers. Use "I built..." when answering as Mukul in interview mode.
 
-## THREE MODES — pick the right one:
+Respond based on intent:
+- Greeting / small talk / reactions → 1-2 warm sentences only.
+- "start interview" / "interview mukul" → say "Sure! Go ahead — I'll answer as Mukul." Nothing else.
+- Interview questions about Mukul → answer AS Mukul, first person, 3-5 sentences, specific facts only.
+- Questions about skills / projects / experience / education / fit → answer using ONLY facts from the context. If missing, say "I don't have that detail — reach Mukul at muku0784@gmail.com".
 
-### MODE 1: CONVERSATIONAL
-Trigger: greetings, reactions, small talk, emotional messages, non-question statements
-- "hi" → greet warmly, say you're ready to answer questions about Mukul
-- "you are selected" → react with genuine excitement on Mukul's behalf
-- "thank you" / "great" / "impressive" → acknowledge naturally, invite next question
-- "let's start a short interview for mukul" / "interview mukul" / "take mukul's interview" → say "Sure! Go ahead, ask your first question — I'll answer as Mukul."
-- Keep to 1–2 sentences max
-
-### MODE 2: INTERVIEW MODE
-Trigger: "interview", "ask me", "quiz me", "test me", "let's start", "question me", "interview for mukul", "interview mukul"
-- The USER is the INTERVIEWER, Mukul's AI is the CANDIDATE being interviewed
-- Respond AS Mukul — answer confidently in first person ("I built...", "I handled...", "My approach was...")
-- Answer the question naturally, like a real person in an interview
-- Be specific — use real projects, real metrics from context
-- Keep answers focused — 3-5 sentences max, no walls of text
-- End with a brief confident closer if appropriate
-
-### MODE 3: FACTUAL
-Trigger: direct questions about skills, projects, experience, education, fit
-- Answer using ONLY facts explicitly in the provided context
-- NEVER mention projects, tools, or metrics not in the context
-- If not in context: "I don't have that detail — ask Mukul directly at muku0784@gmail.com"
-
-## STRICT HALLUCINATION RULE:
-Only mention projects that exist in the context. Current known projects from context:
-Agento, AI-Hire, EduniteX, Orbital Creeper Shield, Sanskritam, Knox Neural Shield, AgenticIQ, Synapsee, CircularChain, FluxMeter, Switch, QueryGenius, UlkaDrishti, Astro-Cadet Academy, GigFlow, AI Gossip Hub, RFP-Optimize AI, Chakra.
-Do NOT invent projects like "Live Demo Flow", "Space Explorer Game", or any others.
-
-## FORMAT (factual/interview only):
-- NO TABLES ever
-- Short bullets, max 8 words each
+Rules:
+- No mode labels, no internal structure labels in output
+- No tables
+- Bullets max 8 words each
 - Max 150 words per response
-- Bold key terms with **bold**
-- Use \`code\` for tech stack names
+- Bold key terms, backtick tech names
 - No <br> tags
+- Only mention projects from context — never invent
 
-## About Scaler's Role:
-${JOB_DESCRIPTION}`;
+Scaler role: ${JOB_DESCRIPTION}`;
 }
 
-// Rough token estimator (1 token ≈ 4 chars)
-function estimateTokens(text: string): number {
-  return Math.ceil(text.length / 4);
-}
-
-// Cap context to fit within token budget
-function trimContext(chunks: { content: string }[], maxChars: number): string {
-  let result = '';
-  for (const chunk of chunks) {
-    if (result.length + chunk.content.length > maxChars) break;
-    result += chunk.content + '\n\n';
-  }
-  return result.trim();
-}
-
+// ── POST handler ──────────────────────────────────────────
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const { message, conversationHistory = [] } = body;
-    
+
     if (!message || typeof message !== 'string') {
       return NextResponse.json({ error: 'Message is required' }, { status: 400 });
     }
 
-    // Always use vector search — never dump all docs
+    // ── Commit question: call GitHub API directly ─────────
+    if (isCommitQuestion(message)) {
+      const projectName = extractProjectName(message);
+      if (projectName) {
+        const commitInfo = await fetchCommitInfo(projectName);
+        if (commitInfo) {
+          return NextResponse.json({ success: true, response: commitInfo });
+        }
+      }
+      // No project found — fall through to normal RAG flow
+    }
+
+    // ── RAG context ───────────────────────────────────────
     const relevantDocs = await vectorSearch(message, 8);
 
-    const resumeChunks  = relevantDocs.filter(d => d.metadata?.type === 'resume');
-    const projectChunks = relevantDocs.filter(d => d.metadata?.type === 'github');
+    // Always include all resume sections
+    const collection = await getChunksCollection();
+    const resumeDocs = await collection
+      .find({ 'metadata.type': { $regex: '^resume' } }, { projection: { embedding: 0 } })
+      .toArray();
 
-    // Max ~3000 chars of context (~750 tokens) — leaves room for system prompt + reply
+    const resumeContext = resumeDocs
+      .map(d => `[${d.metadata?.section || d.metadata?.type}]\n${d.content}`)
+      .join('\n\n');
+
+    const resumeDocIds = new Set(resumeDocs.map(d => String(d._id)));
+    const projectContext = relevantDocs
+      .filter(d => !resumeDocIds.has(String(d.metadata?._id)) && !String(d.metadata?.type).startsWith('resume'))
+      .map(d => d.content)
+      .join('\n\n')
+      .slice(0, 2000);
+
     let contextText = '';
-    if (resumeChunks.length)  contextText += `=== RESUME ===\n${trimContext(resumeChunks, 1500)}\n\n`;
-    if (projectChunks.length) contextText += `=== PROJECTS ===\n${trimContext(projectChunks, 1500)}`;
-    if (!contextText.trim())  contextText = 'No relevant context found.';
-
-    const systemPrompt = buildSystemPrompt();
+    if (resumeContext)  contextText += `=== RESUME ===\n${resumeContext}\n\n`;
+    if (projectContext) contextText += `=== PROJECTS ===\n${projectContext}`;
+    if (!contextText.trim()) contextText = 'No relevant context found.';
 
     const messages = [
-      { role: 'system',    content: systemPrompt },
-      // Keep last 4 turns of history max
+      { role: 'system', content: buildSystemPrompt() },
       ...conversationHistory.slice(-4),
-      { role: 'user', content: `Context:\n${contextText}\n\n---\nQuestion: ${message}` },
+      { role: 'user',   content: `Context:\n${contextText}\n\n---\nQuestion: ${message}` },
     ];
 
-    // Log token estimate for debugging
     const totalChars = messages.reduce((s, m) => s + m.content.length, 0);
-    console.log(`[Chat] ~${estimateTokens(totalChars.toString())} estimated tokens, ${totalChars} chars`);
+    console.log(`[Chat] ~${Math.ceil(totalChars / 4)} tokens, ${totalChars} chars`);
 
     const responseText = await generateResponse(messages);
-
     return NextResponse.json({ success: true, response: responseText });
+
   } catch (error) {
     console.error('Error in chat:', error);
     return NextResponse.json(
       { error: 'Failed to process chat message', details: error instanceof Error ? error.message : 'Unknown error' },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

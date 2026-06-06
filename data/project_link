@@ -20,11 +20,6 @@
     "live": "https://orbital-creeper-shield.streamlit.app/"
   },
   {
-    "name": "Sanskritam",
-    "github": "https://github.com/mukul-sharma-tech/Sanskritam",
-    "live": "https://sanskritam.vercel.app/"
-  },
-  {
     "name": "Knox Neural Shield",
     "github": "https://github.com/mukul-sharma-tech/Knox-Neural-Shield",
     "live": "https://knox-neural-shield.streamlit.app/"
@@ -38,46 +33,6 @@
     "name": "Synapsee",
     "github": "https://github.com/mukul-sharma-tech/SynapseeAI",
     "live": "https://the-synapsee-ai.vercel.app/"
-  },
-  {
-    "name": "CircularChain",
-    "github": "https://github.com/mukul-sharma-tech/CircularChain",
-    "live": "https://circular-chain.vercel.app/"
-  },
-  {
-    "name": "FluxMeter",
-    "github": "https://github.com/mukul-sharma-tech/FluxMeter",
-    "live": "https://flux-meter.vercel.app/"
-  },
-  {
-    "name": "Switch",
-    "github": "https://github.com/mukul-sharma-tech/The_Switch",
-    "live": "https://the-switch-app.vercel.app/"
-  },
-  {
-    "name": "QueryGenius",
-    "github": "https://github.com/mukul-sharma-tech/QueryGenius",
-    "live": "https://query-genius.streamlit.app/"
-  },
-  {
-    "name": "UlkaDrishti",
-    "github": "https://github.com/mukul-sharma-tech/UlkaDrishti",
-    "live": "https://ulka-drishti.vercel.app/"
-  },
-  {
-    "name": "Astro-Cadet Academy",
-    "github": "https://github.com/mukul-sharma-tech/astro-cadet-academy",
-    "live": "https://astro-cadet-academy.vercel.app/"
-  },
-  {
-    "name": "GigFlow",
-    "github": "https://github.com/mukul-sharma-tech/GigFlow",
-    "live": "https://gig-flow-beta.vercel.app/"
-  },
-  {
-    "name": "AI Gossip Hub",
-    "github": "https://github.com/mukul-sharma-tech/AI-Gossip-Hub",
-    "live": null
   },
   {
     "name": "RFP Optimizer AI",
