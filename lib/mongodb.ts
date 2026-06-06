@@ -4,8 +4,7 @@ import dns from 'dns';
 // Force Node.js to use Google/Cloudflare DNS for Atlas SRV resolution
 dns.setServers(['8.8.8.8', '1.1.1.1']);
 
-// const uri = process.env.MONGO_URI || process.env.MONGODB_URI || 'mongodb://localhost:27017/mukul-ai';
-const uri = process.env.MONGO_URI || process.env.MONGODB_URI || 'mongodb+srv://mukul:1010@nodecluster0.hurza.mongodb.net/?retryWrites=true&w=majority&appName=NodeCluster0/mukul-ai';
+const uri = process.env.MONGO_URI || process.env.MONGODB_URI || 'mongodb://localhost:27017/mukul-ai';
 
 const client = new MongoClient(uri);
 
