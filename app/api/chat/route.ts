@@ -4,7 +4,7 @@ import { generateEmbedding } from '@/lib/embeddings';
 import ollama from 'ollama';
 import { GoogleGenAI } from '@google/genai';
 
-const LLM_MODEL = 'gpt-oss::20b-cloud';
+const LLM_MODEL = 'gpt-oss:20b-cloud';
 
 // ── Groq ──────────────────────────────────────────────────
 async function callGroq(
