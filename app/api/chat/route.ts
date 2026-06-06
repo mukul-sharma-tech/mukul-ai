@@ -189,78 +189,62 @@ Do NOT invent projects like "Live Demo Flow", "Space Explorer Game", or any othe
 ${JOB_DESCRIPTION}`;
 }
 
+// Rough token estimator (1 token ≈ 4 chars)
+function estimateTokens(text: string): number {
+  return Math.ceil(text.length / 4);
+}
+
+// Cap context to fit within token budget
+function trimContext(chunks: { content: string }[], maxChars: number): string {
+  let result = '';
+  for (const chunk of chunks) {
+    if (result.length + chunk.content.length > maxChars) break;
+    result += chunk.content + '\n\n';
+  }
+  return result.trim();
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const { message, conversationHistory = [] } = body;
     
     if (!message || typeof message !== 'string') {
-      return NextResponse.json(
-        { error: 'Message is required' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'Message is required' }, { status: 400 });
     }
-    
-    const relevantDocs = await vectorSearch(message, 15);
-    
-    // Build comprehensive context - include ALL resume and project chunks for completeness
-    const collection = await getChunksCollection();
-    const allDocs = await collection.find({}, { projection: { embedding: 0 } }).toArray();
 
-    const resumeChunks = allDocs.filter(d => d.metadata?.type === 'resume');
-    const projectChunks = allDocs.filter(d => d.metadata?.type === 'github');
+    // Always use vector search — never dump all docs
+    const relevantDocs = await vectorSearch(message, 8);
 
-    // For broad questions use all data; for specific ones use vector search results
-    const broadQuestions = ['experience', 'intern', 'project', 'fit', 'background', 'skill', 'qualification'];
-    const isBroadQuestion = broadQuestions.some(kw => message.toLowerCase().includes(kw));
+    const resumeChunks  = relevantDocs.filter(d => d.metadata?.type === 'resume');
+    const projectChunks = relevantDocs.filter(d => d.metadata?.type === 'github');
 
+    // Max ~3000 chars of context (~750 tokens) — leaves room for system prompt + reply
     let contextText = '';
+    if (resumeChunks.length)  contextText += `=== RESUME ===\n${trimContext(resumeChunks, 1500)}\n\n`;
+    if (projectChunks.length) contextText += `=== PROJECTS ===\n${trimContext(projectChunks, 1500)}`;
+    if (!contextText.trim())  contextText = 'No relevant context found.';
 
-    if (isBroadQuestion) {
-      if (resumeChunks.length > 0) {
-        contextText += `\n\n=== RESUME (all data) ===\n${resumeChunks.map(d => d.content).join('\n\n')}`;
-      }
-      if (projectChunks.length > 0) {
-        contextText += `\n\n=== PROJECTS (all data) ===\n${projectChunks.map(d => d.content).join('\n\n')}`;
-      }
-    } else {
-      // Use vector search results for specific questions
-      const topResume = relevantDocs.filter(d => d.metadata?.type === 'resume');
-      const topProjects = relevantDocs.filter(d => d.metadata?.type === 'github');
-      if (topResume.length > 0) {
-        contextText += `\n\n=== RESUME ===\n${topResume.map(d => d.content).join('\n\n')}`;
-      }
-      if (topProjects.length > 0) {
-        contextText += `\n\n=== PROJECTS ===\n${topProjects.map(d => d.content).join('\n\n')}`;
-      }
-    }
+    const systemPrompt = buildSystemPrompt();
 
-    if (!contextText.trim()) {
-      contextText = 'No relevant context found in the knowledge base.';
-    }
-    
     const messages = [
-      { role: 'system', content: buildSystemPrompt() },
-      ...conversationHistory,
-      { 
-        role: 'user', 
-        content: `Context about Mukul:\n${contextText}\n\n---\n\nQuestion: ${message}` 
-      },
+      { role: 'system',    content: systemPrompt },
+      // Keep last 4 turns of history max
+      ...conversationHistory.slice(-4),
+      { role: 'user', content: `Context:\n${contextText}\n\n---\nQuestion: ${message}` },
     ];
-    
+
+    // Log token estimate for debugging
+    const totalChars = messages.reduce((s, m) => s + m.content.length, 0);
+    console.log(`[Chat] ~${estimateTokens(totalChars.toString())} estimated tokens, ${totalChars} chars`);
+
     const responseText = await generateResponse(messages);
 
-    return NextResponse.json({
-      success: true,
-      response: responseText,
-    });
+    return NextResponse.json({ success: true, response: responseText });
   } catch (error) {
     console.error('Error in chat:', error);
     return NextResponse.json(
-      { 
-        error: 'Failed to process chat message',
-        details: error instanceof Error ? error.message : 'Unknown error'
-      },
+      { error: 'Failed to process chat message', details: error instanceof Error ? error.message : 'Unknown error' },
       { status: 500 }
     );
   }
