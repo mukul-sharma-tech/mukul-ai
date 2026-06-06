@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getChunksCollection } from '@/lib/mongodb';
 import { generateEmbedding } from '@/lib/embeddings';
 import { getCommitHistory } from '@/lib/github';
+import { getAvailableSlots, bookAppointment } from '@/lib/calendar';
 import ollama from 'ollama';
 import { GoogleGenAI } from '@google/genai';
 
@@ -119,7 +120,169 @@ async function generateResponse(
   throw new Error('All LLM providers failed (Ollama, Groq1, Groq2, Gemini)');
 }
 
-// ── GitHub commit lookup ──────────────────────────────────
+// ── Calendar intent detection ─────────────────────────────
+const AVAILABILITY_KEYWORDS = ['available', 'availability', 'free slot', 'free time', 'schedule', 'when can', 'book a call', 'book call', 'check calendar'];
+const BOOKING_KEYWORDS = ['book', 'schedule a call', 'set up a call', 'confirm', 'reserve'];
+
+function isAvailabilityQuestion(msg: string): boolean {
+  const lower = msg.toLowerCase();
+  return AVAILABILITY_KEYWORDS.some(k => lower.includes(k));
+}
+
+function isBookingRequest(msg: string): boolean {
+  const lower = msg.toLowerCase();
+  return BOOKING_KEYWORDS.some(k => lower.includes(k));
+}
+
+// Extract date from message — supports "today", "tomorrow", "June 10", "2026-06-10"
+function extractDate(msg: string): string | null {
+  const lower = msg.toLowerCase();
+  const now   = new Date();
+
+  if (lower.includes('today')) {
+    return now.toISOString().split('T')[0];
+  }
+  if (lower.includes('tomorrow')) {
+    const tomorrow = new Date(now);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    return tomorrow.toISOString().split('T')[0];
+  }
+
+  // Match YYYY-MM-DD
+  const isoMatch = msg.match(/(\d{4}-\d{2}-\d{2})/);
+  if (isoMatch) return isoMatch[1];
+
+  // Match "June 10" or "10 June"
+  const months: Record<string, number> = {
+    january: 1, february: 2, march: 3, april: 4, may: 5, june: 6,
+    july: 7, august: 8, september: 9, october: 10, november: 11, december: 12,
+  };
+  const monthMatch = lower.match(/(january|february|march|april|may|june|july|august|september|october|november|december)\s+(\d{1,2})/);
+  const dayFirst   = lower.match(/(\d{1,2})\s+(january|february|march|april|may|june|july|august|september|october|november|december)/);
+
+  const matched = monthMatch || dayFirst;
+  if (matched) {
+    const monthStr = monthMatch ? matched[1] : matched[2];
+    const dayStr   = monthMatch ? matched[2] : matched[1];
+    const month    = months[monthStr];
+    const day      = parseInt(dayStr);
+    const year     = now.getFullYear();
+    return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  }
+
+  return null;
+}
+
+// Extract time from message: "10:30 AM", "2 PM", "14:00"
+function extractTime(msg: string): string | null {
+  const timeMatch = msg.match(/\b(\d{1,2}):?(\d{2})?\s*(AM|PM|am|pm)?\b/);
+  if (!timeMatch) return null;
+  const hours   = timeMatch[1];
+  const minutes = timeMatch[2] || '00';
+  const ampm    = timeMatch[3] || '';
+  return `${hours}:${minutes} ${ampm}`.trim();
+}
+
+// Extract name and email from booking message
+function extractContactInfo(msg: string): { name: string | null; email: string | null } {
+  const emailMatch = msg.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
+  const email = emailMatch ? emailMatch[0] : null;
+
+  // Simple name extraction — "my name is X" or "I'm X"
+  const nameMatch = msg.match(/(?:my name is|i'm|i am|name:)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)/i);
+  const name = nameMatch ? nameMatch[1] : null;
+
+  return { name, email };
+}
+
+async function handleCalendarIntent(
+  message: string,
+  conversationHistory: { role: string; content: string }[],
+): Promise<string | null> {
+
+  // Check if booking with time details
+  if (isBookingRequest(message)) {
+    const date = extractDate(message);
+    const time = extractTime(message);
+    const { name, email } = extractContactInfo(message);
+
+    // Also check conversation history for date/time/name if not in current message
+    const history = conversationHistory.map(m => m.content).join(' ');
+    const finalDate  = date  || extractDate(history);
+    const finalTime  = time  || extractTime(history);
+    const finalName  = name  || extractContactInfo(history).name;
+    const finalEmail = email || extractContactInfo(history).email;
+
+    if (finalDate && finalTime && finalName) {
+      try {
+        const startISO = parseTimeToISO(finalDate, finalTime);
+        const endISO   = new Date(new Date(startISO).getTime() + 30 * 60 * 1000).toISOString();
+
+        const event = await bookAppointment(
+          `Call with ${finalName}`,
+          `Booked via Mukul's AI Assistant\nFrom: ${finalName}${finalEmail ? ` (${finalEmail})` : ''}`,
+          startISO,
+          endISO,
+          finalEmail || undefined,
+        );
+
+        return `✅ **Call booked!**\n\n- **Date:** ${finalDate}\n- **Time:** ${finalTime} IST\n- **With:** ${finalName}\n${finalEmail ? `- **Email:** ${finalEmail}\n` : ''}\n[View in Calendar](${event.htmlLink})\n\nMukul will connect with you then!`;
+      } catch (err: any) {
+        if (err.message?.includes('409') || err.message?.includes('busy')) {
+          return `That slot was just taken. Let me check again — what other time works for you?`;
+        }
+        return `Booking failed: ${err.message}. Please try again.`;
+      }
+    }
+
+    // Missing info — ask for it
+    if (!finalDate) return `Sure, I can book a call! What date works for you?`;
+    if (!finalTime) {
+      const slots = await getAvailableSlots(finalDate).catch(() => []);
+      if (slots.length) {
+        return `Great! Here are available slots on **${finalDate}**:\n\n${slots.slice(0, 8).map(s => `- ${s}`).join('\n')}\n\nWhich time works for you?`;
+      }
+      return `What time on ${finalDate} works for you?`;
+    }
+    if (!finalName) return `Almost there! What's your name?`;
+  }
+
+  // Availability check
+  if (isAvailabilityQuestion(message)) {
+    const date = extractDate(message) || new Date().toISOString().split('T')[0];
+    try {
+      const slots = await getAvailableSlots(date);
+      if (!slots.length) {
+        return `Mukul is fully booked on **${date}**. Try another date?`;
+      }
+      return `Here are Mukul's open slots on **${date}** (IST):\n\n${slots.slice(0, 8).map(s => `- ${s}`).join('\n')}\n\nWant to book one? Tell me your name, preferred time, and email.`;
+    } catch (err) {
+      return `Couldn't fetch availability right now. Try emailing muku0784@gmail.com directly.`;
+    }
+  }
+
+  return null;
+}
+
+// Parse time string + date to UTC ISO
+function parseTimeToISO(date: string, time: string): string {
+  const isPM = /PM/i.test(time);
+  const isAM = /AM/i.test(time);
+  const clean = time.replace(/\s?(IST|AM|PM)/gi, '').trim();
+  let [hours, minutes] = clean.split(':').map(n => parseInt(n) || 0);
+  if (isPM && hours !== 12) hours += 12;
+  if (isAM && hours === 12) hours = 0;
+
+  // IST = UTC+5:30 → subtract 5h30m
+  let utcH = hours - 5;
+  let utcM = minutes - 30;
+  if (utcM < 0) { utcM += 60; utcH -= 1; }
+
+  const dt = new Date(`${date}T00:00:00Z`);
+  dt.setUTCHours(utcH, utcM, 0, 0);
+  return dt.toISOString();
+}
+// ──────────────────────────────────────────────────────────
 const COMMIT_KEYWORDS = [
   'commit', 'last commit', 'recent commit', 'latest commit',
   'commit history', 'last update', 'recently updated', 'last pushed',
@@ -209,6 +372,7 @@ Respond based on intent:
 - "start interview" / "interview mukul" → say "Sure! Go ahead — I'll answer as Mukul." Nothing else.
 - Interview questions about Mukul → answer AS Mukul, first person, 3-5 sentences, specific facts only.
 - Questions about skills / projects / experience / education / fit → answer using ONLY facts from the context. If missing, say "I don't have that detail — reach Mukul at muku0784@gmail.com".
+- Availability / booking a call → say you can check Mukul's calendar and book directly in chat. Ask for their preferred date.
 
 Rules:
 - No mode labels, no internal structure labels in output
@@ -230,6 +394,12 @@ export async function POST(request: NextRequest) {
 
     if (!message || typeof message !== 'string') {
       return NextResponse.json({ error: 'Message is required' }, { status: 400 });
+    }
+
+    // ── Calendar intent: availability / booking ───────────
+    const calendarResponse = await handleCalendarIntent(message, conversationHistory.slice(-6)).catch(() => null);
+    if (calendarResponse) {
+      return NextResponse.json({ success: true, response: calendarResponse });
     }
 
     // ── Commit question: call GitHub API directly ─────────

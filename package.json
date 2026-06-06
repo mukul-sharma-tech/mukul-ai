@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@google/genai": "^2.8.0",
+    "@googleapis/calendar": "^15.0.0",
     "@huggingface/inference": "^4.13.18",
     "mongodb": "^7.2.0",
     "next": "16.2.7",
