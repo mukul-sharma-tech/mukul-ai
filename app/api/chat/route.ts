@@ -121,78 +121,89 @@ async function generateResponse(
 }
 
 // ── Calendar intent detection ─────────────────────────────
-const AVAILABILITY_KEYWORDS = ['available', 'availability', 'free slot', 'free time', 'schedule', 'when can', 'book a call', 'book call', 'check calendar'];
-const BOOKING_KEYWORDS = ['book', 'schedule a call', 'set up a call', 'confirm', 'reserve'];
+const AVAILABILITY_KEYWORDS = ['available', 'availability', 'free slot', 'free time', 'when can', 'book a call', 'book call', 'check calendar'];
+const BOOKING_KEYWORDS = ['book', 'schedule a call', 'set up a call', 'confirm the call', 'reserve'];
 
 function isAvailabilityQuestion(msg: string): boolean {
-  const lower = msg.toLowerCase();
-  return AVAILABILITY_KEYWORDS.some(k => lower.includes(k));
+  return AVAILABILITY_KEYWORDS.some(k => msg.toLowerCase().includes(k));
 }
 
 function isBookingRequest(msg: string): boolean {
-  const lower = msg.toLowerCase();
-  return BOOKING_KEYWORDS.some(k => lower.includes(k));
+  return BOOKING_KEYWORDS.some(k => msg.toLowerCase().includes(k));
 }
 
-// Extract date from message — supports "today", "tomorrow", "June 10", "2026-06-10"
 function extractDate(msg: string): string | null {
   const lower = msg.toLowerCase();
-  const now   = new Date();
+  const now = new Date();
 
-  if (lower.includes('today')) {
-    return now.toISOString().split('T')[0];
-  }
+  if (lower.includes('today'))    return now.toISOString().split('T')[0];
   if (lower.includes('tomorrow')) {
-    const tomorrow = new Date(now);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    return tomorrow.toISOString().split('T')[0];
+    const t = new Date(now); t.setDate(t.getDate() + 1);
+    return t.toISOString().split('T')[0];
   }
 
-  // Match YYYY-MM-DD
-  const isoMatch = msg.match(/(\d{4}-\d{2}-\d{2})/);
+  const isoMatch = msg.match(/\b(\d{4}-\d{2}-\d{2})\b/);
   if (isoMatch) return isoMatch[1];
 
-  // Match "June 10" or "10 June"
   const months: Record<string, number> = {
-    january: 1, february: 2, march: 3, april: 4, may: 5, june: 6,
-    july: 7, august: 8, september: 9, october: 10, november: 11, december: 12,
+    january:1, february:2, march:3, april:4, may:5, june:6,
+    july:7, august:8, september:9, october:10, november:11, december:12,
   };
-  const monthMatch = lower.match(/(january|february|march|april|may|june|july|august|september|october|november|december)\s+(\d{1,2})/);
-  const dayFirst   = lower.match(/(\d{1,2})\s+(january|february|march|april|may|june|july|august|september|october|november|december)/);
-
-  const matched = monthMatch || dayFirst;
-  if (matched) {
-    const monthStr = monthMatch ? matched[1] : matched[2];
-    const dayStr   = monthMatch ? matched[2] : matched[1];
-    const month    = months[monthStr];
-    const day      = parseInt(dayStr);
-    const year     = now.getFullYear();
-    return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-  }
+  const m1 = lower.match(/\b(january|february|march|april|may|june|july|august|september|october|november|december)\s+(\d{1,2})\b/);
+  const m2 = lower.match(/\b(\d{1,2})\s+(january|february|march|april|may|june|july|august|september|october|november|december)\b/);
+  if (m1) return `${now.getFullYear()}-${String(months[m1[1]]).padStart(2,'0')}-${String(parseInt(m1[2])).padStart(2,'0')}`;
+  if (m2) return `${now.getFullYear()}-${String(months[m2[2]]).padStart(2,'0')}-${String(parseInt(m2[1])).padStart(2,'0')}`;
 
   return null;
 }
 
-// Extract time from message: "10:30 AM", "2 PM", "14:00"
+// Must have explicit AM/PM OR HH:MM format — avoids grabbing random numbers
 function extractTime(msg: string): string | null {
-  const timeMatch = msg.match(/\b(\d{1,2}):?(\d{2})?\s*(AM|PM|am|pm)?\b/);
-  if (!timeMatch) return null;
-  const hours   = timeMatch[1];
-  const minutes = timeMatch[2] || '00';
-  const ampm    = timeMatch[3] || '';
-  return `${hours}:${minutes} ${ampm}`.trim();
+  // "3 PM", "3pm", "3:00 PM", "15:00"
+  const withAmPm = msg.match(/\b(\d{1,2})(?::(\d{2}))?\s*(AM|PM|am|pm)\b/);
+  if (withAmPm) {
+    const h = withAmPm[1];
+    const m = withAmPm[2] || '00';
+    const ap = withAmPm[3].toUpperCase();
+    return `${h}:${m} ${ap}`;
+  }
+  // 24h "14:30"
+  const h24 = msg.match(/\b([01]?\d|2[0-3]):([0-5]\d)\b/);
+  if (h24) return `${h24[1]}:${h24[2]}`;
+
+  return null;
 }
 
-// Extract name and email from booking message
-function extractContactInfo(msg: string): { name: string | null; email: string | null } {
-  const emailMatch = msg.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
-  const email = emailMatch ? emailMatch[0] : null;
+// Extract email
+function extractEmail(msg: string): string | null {
+  const m = msg.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
+  return m ? m[0] : null;
+}
 
-  // Simple name extraction — "my name is X" or "I'm X"
-  const nameMatch = msg.match(/(?:my name is|i'm|i am|name:)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)/i);
-  const name = nameMatch ? nameMatch[1] : null;
+// Extract name — from "book for TIME, NAME, EMAIL" pattern or explicit phrases
+function extractName(msg: string): string | null {
+  // Pattern: "book for X pm, Name, email" — name is between first comma and email/second comma
+  const commaPattern = msg.match(/book[^,]+,\s*([^,@\n]+?)(?:,|\s+[a-zA-Z0-9._%+-]+@)/i);
+  if (commaPattern) {
+    const candidate = commaPattern[1].trim();
+    // Reject if it looks like a time or contains digits
+    if (candidate && !/\d/.test(candidate) && candidate.length < 40) return candidate;
+  }
 
-  return { name, email };
+  // "my name is X", "I'm X", "name: X"
+  const explicit = msg.match(/(?:my name is|i'm|i am|name[:\s]+)\s*([A-Za-z][a-z]+(?: [A-Za-z][a-z]+)?)/i);
+  if (explicit) return explicit[1].trim();
+
+  // Single word that looks like a name (capital letter, no special chars, appears alone)
+  const singleName = msg.match(/^([A-Z][a-z]{2,})$/);
+  if (singleName) return singleName[1];
+
+  return null;
+}
+
+// Only scan USER messages from history
+function userHistoryText(history: { role: string; content: string }[]): string {
+  return history.filter(m => m.role === 'user').map(m => m.content).join(' ');
 }
 
 async function handleCalendarIntent(
@@ -200,89 +211,84 @@ async function handleCalendarIntent(
   conversationHistory: { role: string; content: string }[],
 ): Promise<string | null> {
 
-  // Check if booking with time details
-  if (isBookingRequest(message)) {
-    const date = extractDate(message);
-    const time = extractTime(message);
-    const { name, email } = extractContactInfo(message);
+  const isBooking     = isBookingRequest(message);
+  const isAvailability = isAvailabilityQuestion(message);
 
-    // Also check conversation history for date/time/name if not in current message
-    const history = conversationHistory.map(m => m.content).join(' ');
-    const finalDate  = date  || extractDate(history);
-    const finalTime  = time  || extractTime(history);
-    const finalName  = name  || extractContactInfo(history).name;
-    const finalEmail = email || extractContactInfo(history).email;
+  if (!isBooking && !isAvailability) return null;
 
-    if (finalDate && finalTime && finalName) {
+  if (isBooking) {
+    // Extract from current message first, then user history only
+    const userHistory = userHistoryText(conversationHistory);
+    const allUserText = userHistory + ' ' + message;
+
+    const date  = extractDate(message)  || extractDate(userHistory);
+    const time  = extractTime(message)  || extractTime(userHistory);
+    const email = extractEmail(message) || extractEmail(userHistory);
+    const name  = extractName(message)  || extractName(userHistory);
+
+    // Have everything — book it
+    if (date && time && name) {
       try {
-        const startISO = parseTimeToISO(finalDate, finalTime);
+        const startISO = parseTimeToISO(date, time);
         const endISO   = new Date(new Date(startISO).getTime() + 30 * 60 * 1000).toISOString();
 
         const event = await bookAppointment(
-          `Call with ${finalName}`,
-          `Booked via Mukul's AI Assistant\nFrom: ${finalName}${finalEmail ? ` (${finalEmail})` : ''}`,
+          `Call with ${name}`,
+          `Booked via Mukul's AI Assistant\nName: ${name}${email ? `\nEmail: ${email}` : ''}`,
           startISO,
           endISO,
-          finalEmail || undefined,
+          undefined, // no attendees — avoids Domain-Wide Delegation error
         );
 
-        return `✅ **Call booked!**\n\n- **Date:** ${finalDate}\n- **Time:** ${finalTime} IST\n- **With:** ${finalName}\n${finalEmail ? `- **Email:** ${finalEmail}\n` : ''}\n[View in Calendar](${event.htmlLink})\n\nMukul will connect with you then!`;
+        return `✅ **Call booked!**\n\n- **Date:** ${date}\n- **Time:** ${time} IST\n- **Name:** ${name}\n${email ? `- **Email:** ${email}\n` : ''}\n[View in Calendar](${event.htmlLink})\n\nMukul will connect with you then!`;
       } catch (err: any) {
-        if (err.message?.includes('409') || err.message?.includes('busy')) {
-          return `That slot was just taken. Let me check again — what other time works for you?`;
-        }
         return `Booking failed: ${err.message}. Please try again.`;
       }
     }
 
-    // Missing info — ask for it
-    if (!finalDate) return `Sure, I can book a call! What date works for you?`;
-    if (!finalTime) {
-      const slots = await getAvailableSlots(finalDate).catch(() => []);
-      if (slots.length) {
-        return `Great! Here are available slots on **${finalDate}**:\n\n${slots.slice(0, 8).map(s => `- ${s}`).join('\n')}\n\nWhich time works for you?`;
-      }
-      return `What time on ${finalDate} works for you?`;
+    // Ask for what's missing
+    if (!date) return `Sure! What date works for you?`;
+    if (!time) {
+      const slots = await getAvailableSlots(date).catch(() => []);
+      return slots.length
+        ? `Here are free slots on **${date}**:\n\n${slots.slice(0, 8).map(s => `- ${s}`).join('\n')}\n\nWhich time works?`
+        : `What time on ${date} works for you?`;
     }
-    if (!finalName) return `Almost there! What's your name?`;
+    if (!name) return `What's your name?`;
   }
 
-  // Availability check
-  if (isAvailabilityQuestion(message)) {
+  if (isAvailability) {
     const date = extractDate(message) || new Date().toISOString().split('T')[0];
     try {
       const slots = await getAvailableSlots(date);
-      if (!slots.length) {
-        return `Mukul is fully booked on **${date}**. Try another date?`;
-      }
-      return `Here are Mukul's open slots on **${date}** (IST):\n\n${slots.slice(0, 8).map(s => `- ${s}`).join('\n')}\n\nWant to book one? Tell me your name, preferred time, and email.`;
-    } catch (err) {
-      return `Couldn't fetch availability right now. Try emailing muku0784@gmail.com directly.`;
+      if (!slots.length) return `Mukul is fully booked on **${date}**. Try another date?`;
+      return `Here are Mukul's open slots on **${date}** (IST):\n\n${slots.slice(0, 8).map(s => `- ${s}`).join('\n')}\n\nWant to book one? Share your name, preferred time, and email.`;
+    } catch {
+      return `Couldn't fetch availability right now. Email muku0784@gmail.com directly.`;
     }
   }
 
   return null;
 }
 
-// Parse time string + date to UTC ISO
+// Parse "3:00 PM" + "2026-06-07" → UTC ISO
 function parseTimeToISO(date: string, time: string): string {
-  const isPM = /PM/i.test(time);
-  const isAM = /AM/i.test(time);
+  const isPM  = /PM/i.test(time);
+  const isAM  = /AM/i.test(time);
   const clean = time.replace(/\s?(IST|AM|PM)/gi, '').trim();
-  let [hours, minutes] = clean.split(':').map(n => parseInt(n) || 0);
-  if (isPM && hours !== 12) hours += 12;
-  if (isAM && hours === 12) hours = 0;
+  let [h, m]  = clean.split(':').map(n => parseInt(n) || 0);
+  if (isPM && h !== 12) h += 12;
+  if (isAM && h === 12) h = 0;
 
-  // IST = UTC+5:30 → subtract 5h30m
-  let utcH = hours - 5;
-  let utcM = minutes - 30;
+  // IST = UTC+5:30
+  let utcH = h - 5;
+  let utcM = m - 30;
   if (utcM < 0) { utcM += 60; utcH -= 1; }
 
   const dt = new Date(`${date}T00:00:00Z`);
   dt.setUTCHours(utcH, utcM, 0, 0);
   return dt.toISOString();
 }
-// ──────────────────────────────────────────────────────────
 const COMMIT_KEYWORDS = [
   'commit', 'last commit', 'recent commit', 'latest commit',
   'commit history', 'last update', 'recently updated', 'last pushed',
